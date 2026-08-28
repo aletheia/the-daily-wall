@@ -22,9 +22,9 @@ export async function generateMetadata(): Promise<Metadata> {
   const metadataBase = new URL(
     `${safeHost.startsWith('localhost') ? 'http' : 'https'}://${safeHost}`,
   );
-  const title = 'Aether Field — Agent-operable WebGPU';
+  const title = 'The Daily Wall — News, pinned in public';
   const description =
-    'An interactive vgpu shader canvas with controls exposed to AI agents through WebMCP.';
+    'A WebGPU-powered wall for writing, pasting, arranging, and curating news Post-its with WebMCP.';
 
   return {
     metadataBase,
@@ -34,7 +34,7 @@ export async function generateMetadata(): Promise<Metadata> {
       title,
       description,
       type: 'website',
-      images: [{ url: '/og.png', width: 1200, height: 630, alt: 'Aether Field — A canvas that listens.' }],
+      images: [{ url: '/og.png', width: 1200, height: 630, alt: 'The Daily Wall — News, pinned in public.' }],
     },
     twitter: {
       card: 'summary_large_image',
