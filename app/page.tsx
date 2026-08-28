@@ -819,7 +819,11 @@ export default function Home() {
         <header className="rail">
           <div><span className="section-code">01 / WALL</span><h1>What’s sticking <em>today?</em></h1></div>
           <p>A living wall for headlines, fragments and stories worth keeping in sight.</p>
-          <button type="button" className="drawer-toggle" onClick={() => setDrawerOpen((current) => !current)} aria-expanded={drawerOpen} aria-controls="news-drawer">{drawerOpen ? 'CLOSE DRAWER' : 'OPEN DRAWER'}</button>
+          <div className="rail-actions">
+            <button type="button" className="header-import" onClick={queueRecentNewsImport} disabled={importQueued}>{importQueued ? 'IMPORT QUEUED' : 'IMPORT RECENT NEWS'}</button>
+            <button type="button" className="drawer-toggle" onClick={() => setDrawerOpen((current) => !current)} aria-expanded={drawerOpen} aria-controls="news-drawer">{drawerOpen ? 'CLOSE DRAWER' : 'OPEN DRAWER'}</button>
+            <button type="button" className="header-log" onClick={() => setLogPanelOpen(true)}>LOG <b>{String(agentLogs.length).padStart(2, '0')}</b></button>
+          </div>
           <nav aria-label="Filter notes">
             {(['ALL', ...CATEGORIES] as Filter[]).map((filter) => (
               <button key={filter} className={activeFilter === filter ? 'active' : ''} onClick={() => setActiveFilter(filter)}>{filter === 'ALL' ? 'ALL NOTES' : filter}<b>{String(counts[filter] ?? 0).padStart(2, '0')}</b></button>
@@ -869,14 +873,11 @@ export default function Home() {
         <aside className="composer" id="news-drawer">
           <section className="queue-panel" aria-label="Agent queue">
             <div className="queue-panel-head"><span className="section-code">02 / AGENT QUEUE</span><b>{String(totalQueuedActions).padStart(2, '0')}</b></div>
+            <p className="queue-description">Click a Post-it to queue a fact check. A connected agent researches the claim and writes the verdict back; its colored block disappears when the verification is complete.</p>
             <div className="queue-blocks" aria-live="polite">
               {queuedNotes.map((note) => <button type="button" key={note.id} className={`queue-block ${note.color}`} onClick={() => focusNote(note)} title={`Fact-check queued: ${note.title}`} aria-label={`Open queued note ${note.title}`}><span>?</span></button>)}
               {agentActions.map((action) => <button type="button" key={action.id} className="queue-block import" onClick={() => setLogPanelOpen(true)} title="Recent-news import queued" aria-label="Open agent log for recent-news import"><span>↓</span></button>)}
               {totalQueuedActions === 0 && <span className="queue-empty">QUEUE CLEAR</span>}
-            </div>
-            <div className="queue-actions">
-              <button type="button" onClick={queueRecentNewsImport} disabled={importQueued}>{importQueued ? 'IMPORT QUEUED' : 'IMPORT RECENT NEWS'}</button>
-              <button type="button" onClick={() => setLogPanelOpen(true)}>AGENT LOG <b>{String(agentLogs.length).padStart(2, '0')}</b></button>
             </div>
           </section>
           <span className="section-code form-code">03 / {editingId ? 'EDIT NOTE' : 'ADD NOTE'}</span>
@@ -888,10 +889,6 @@ export default function Home() {
             <button type="submit" className="pin-button"><span>{editingId ? 'UPDATE THE NOTE' : 'PIN TO THE WALL'}</span><b>↗</b></button>
             {editingId && <button type="button" className="cancel-button" onClick={resetComposer}>CANCEL EDIT</button>}
           </form>
-          <div className="fact-check-help">
-            <span className="section-code">04 / FACT CHECKS · {String(queuedFactChecks).padStart(2, '0')} WAITING</span>
-            <p>Click a Post-it to queue it. A connected agent can research the claim and write its verdict back; its colored queue block disappears when verification is complete.</p>
-          </div>
           <p className="agent-note"><span /> {lastEvent} · 15 AGENT TOOLS EXPOSED</p>
         </aside>
       </section>
