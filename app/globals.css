@@ -36,6 +36,8 @@ button { cursor: pointer; }
 .rail-actions .drawer-toggle { min-width: 104px; }
 .rail-actions .header-log { min-width: 65px; display: flex; align-items: center; justify-content: space-between; gap: 9px; }
 .rail-actions .header-log b { color: #85867e; font-weight: 400; }
+.rail-actions .header-log[aria-expanded='true'] { background: #e54b36; color: white; }
+.rail-actions .header-log[aria-expanded='true'] b { color: white; }
 .rail nav { grid-column: 1 / -1; display: flex; margin-top: 9px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 .rail nav button { flex: 1; display: flex; justify-content: space-between; padding: 7px 13px; border: 0; border-right: 1px solid var(--line); background: transparent; font: 9px var(--font-geist-mono), monospace; letter-spacing: .1em; text-align: left; }
 .rail nav button:last-child { border-right: 0; }

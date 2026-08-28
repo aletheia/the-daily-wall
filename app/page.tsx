@@ -836,7 +836,7 @@ export default function Home() {
             <div className="rail-action-buttons">
               <button type="button" className="header-import" onClick={queueRecentNewsImport} disabled={importQueued}>{importQueued ? 'IMPORT QUEUED' : 'IMPORT RECENT NEWS'}</button>
               <button type="button" className="drawer-toggle" onClick={() => setDrawerOpen((current) => !current)} aria-expanded={drawerOpen} aria-controls="news-drawer">{drawerOpen ? 'CLOSE DRAWER' : 'OPEN DRAWER'}</button>
-              <button type="button" className="header-log" onClick={() => setLogPanelOpen(true)}>LOG <b>{String(agentLogs.length).padStart(2, '0')}</b></button>
+              <button type="button" className="header-log" onClick={() => setLogPanelOpen((current) => !current)} aria-expanded={logPanelOpen} aria-controls="agent-log-panel">LOG <b>{String(agentLogs.length).padStart(2, '0')}</b></button>
             </div>
           </div>
           <nav aria-label="Filter notes">
@@ -891,7 +891,7 @@ export default function Home() {
             <p className="queue-description">Click a Post-it to queue a fact check. A connected agent researches the claim and writes the verdict back; its colored block disappears when the verification is complete.</p>
             <div className="queue-blocks" aria-live="polite">
               {queuedNotes.map((note) => <div className="queue-block-wrap" key={note.id}><button type="button" className={`queue-block ${note.color}`} onClick={() => focusNote(note)} title={`Fact-check queued: ${note.title}`} aria-label={`Open queued note ${note.title}`}><span>?</span></button><button type="button" className="queue-remove" onClick={() => queueFactCheck(note)} title="Remove from queue" aria-label={`Remove ${note.title} from the fact-check queue`}>×</button></div>)}
-              {agentActions.map((action) => <div className="queue-block-wrap" key={action.id}><button type="button" className="queue-block import" onClick={() => setLogPanelOpen(true)} title="Recent-news import queued" aria-label="Open agent log for recent-news import"><span>↓</span></button><button type="button" className="queue-remove" onClick={() => cancelAgentAction(action)} title="Remove from queue" aria-label="Remove recent-news import from the agent queue">×</button></div>)}
+              {agentActions.map((action) => <div className="queue-block-wrap" key={action.id}><span className="queue-block import" role="status" title="Recent-news import queued" aria-label="Recent-news import queued"><span>↓</span></span><button type="button" className="queue-remove" onClick={() => cancelAgentAction(action)} title="Remove from queue" aria-label="Remove recent-news import from the agent queue">×</button></div>)}
               {totalQueuedActions === 0 && <span className="queue-empty">QUEUE CLEAR</span>}
             </div>
           </section>
@@ -907,7 +907,7 @@ export default function Home() {
           <p className="agent-note"><span /> {lastEvent} · 15 AGENT TOOLS EXPOSED</p>
         </aside>
       </section>
-      <section className={`agent-log-panel${logPanelOpen ? ' open' : ''}`} role="dialog" aria-label="Agent activity log" aria-hidden={!logPanelOpen}>
+      <section id="agent-log-panel" className={`agent-log-panel${logPanelOpen ? ' open' : ''}`} role="dialog" aria-label="Agent activity log" aria-hidden={!logPanelOpen}>
         <header><div><span className="section-code">AGENT ACTIVITY</span><b>{String(agentLogs.length).padStart(2, '0')} ENTRIES</b></div><button type="button" onClick={() => setLogPanelOpen(false)} aria-label="Close agent log">CLOSE ×</button></header>
         <div className="log-entries">
           {agentLogs.length === 0 && <p className="log-empty">No agent activity yet. Queue a fact check or import to begin.</p>}
