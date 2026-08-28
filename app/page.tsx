@@ -1,10 +1,17 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type PointerEvent as ReactPointerEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from 'react';
 
 type NoteColor = 'yellow' | 'pink' | 'blue' | 'green' | 'orange';
 type Category = 'TECH' | 'WORLD' | 'CULTURE' | 'SCIENCE';
 type Filter = 'ALL' | Category;
+type FactCheckStatus = 'unverified' | 'queued' | 'verified' | 'disputed' | 'inconclusive';
+type FactCheck = {
+  status: FactCheckStatus;
+  summary?: string;
+  sources?: string[];
+  checkedAt?: string;
+};
 type Note = {
   id: string;
   title: string;
@@ -15,6 +22,7 @@ type Note = {
   y: number;
   rotation: number;
   createdAt: string;
+  factCheck?: FactCheck;
 };
 
 type ModelContext = {
@@ -35,6 +43,7 @@ declare global {
 
 const COLORS: NoteColor[] = ['yellow', 'pink', 'blue', 'green', 'orange'];
 const CATEGORIES: Category[] = ['TECH', 'WORLD', 'CULTURE', 'SCIENCE'];
+const FACT_CHECK_STATUSES: FactCheckStatus[] = ['unverified', 'queued', 'verified', 'disputed', 'inconclusive'];
 const LAYOUT = [[6, 9], [38, 5], [68, 14], [16, 52], [53, 54], [72, 58], [6, 68]];
 const ROTATIONS = [-3, 2, 4, 3, -2, 1, -4];
 
@@ -75,6 +84,19 @@ fn hash(p: vec2f) -> f32 {
 `;
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+const getBoardHeight = (count: number) => Math.max(900, Math.ceil(Math.max(count, 1) / 3) * 320 + 100);
+
+function organizeWall(current: Note[]): Note[] {
+  const boardHeight = getBoardHeight(current.length);
+  return current.map((note, index) => ({
+    ...note,
+    x: 4 + (index % 3) * 32,
+    y: ((Math.floor(index / 3) * 270 + 52) / boardHeight) * 100,
+    rotation: ROTATIONS[index % ROTATIONS.length] * 0.45,
+  }));
+}
+
+const factStatus = (note: Note): FactCheckStatus => note.factCheck?.status ?? 'unverified';
 
 function createNote(input: { title: string; body: string; category?: Category; color?: NoteColor }, index: number): Note {
   const [x, y] = LAYOUT[index % LAYOUT.length];
@@ -88,6 +110,7 @@ function createNote(input: { title: string; body: string; category?: Category; c
     y,
     rotation: ROTATIONS[index % ROTATIONS.length],
     createdAt: new Date().toISOString(),
+    factCheck: { status: 'unverified' },
   };
 }
 
@@ -102,9 +125,11 @@ export default function Home() {
   const [lastEvent, setLastEvent] = useState('Wall opened with five stories');
   const [gpuStatus, setGpuStatus] = useState<'loading' | 'ready' | 'fallback'>('loading');
   const [mcpStatus, setMcpStatus] = useState<'preview' | 'ready'>('preview');
+  const [zoom, setZoom] = useState(1);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const stageRef = useRef<HTMLElement>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
   const notesRef = useRef<Note[]>(INITIAL_NOTES);
+  const zoomRef = useRef(1);
   const pointerRef = useRef<[number, number]>([0.5, 0.5]);
   const storageReadyRef = useRef(false);
   const draggingRef = useRef<{ id: string; offsetX: number; offsetY: number; lastX: number } | null>(null);
@@ -120,6 +145,13 @@ export default function Home() {
       notesRef.current = next;
       return next;
     });
+  }, []);
+
+  const setBoardZoom = useCallback((value: number) => {
+    const next = Math.round(clamp(value, 0.55, 1.45) * 20) / 20;
+    zoomRef.current = next;
+    setZoom(next);
+    return next;
   }, []);
 
   useEffect(() => {
@@ -214,9 +246,11 @@ export default function Home() {
             category: CATEGORIES.includes(rawCategory as Category) ? rawCategory as Category : 'WORLD',
             color: COLORS.includes(rawColor as NoteColor) ? rawColor as NoteColor : undefined,
           }, current.length);
-          commitNotes([...current, next].slice(-24));
+          const organized = organizeWall([...current, next].slice(-24));
+          const created = organized.find((note) => note.id === next.id) ?? next;
+          commitNotes(organized);
           setLastEvent(`Agent pinned “${next.title}”`);
-          return { success: true, note: next };
+          return { success: true, note: created, wallOrganized: true };
         },
       }, options);
       await context!.registerTool({
@@ -304,15 +338,92 @@ export default function Home() {
         inputSchema: { type: 'object', properties: {} },
         execute: () => ({ success: true, count: notesRef.current.length, notes: notesRef.current }),
       }, options);
+      await context!.registerTool({
+        name: 'get_news_note',
+        description: 'Read the complete headline, story, position, and fact-check state of one Post-it.',
+        inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
+        execute: ({ id }) => {
+          const note = notesRef.current.find((item) => item.id === String(id));
+          return note ? { success: true, note } : { success: false, error: 'Note not found.' };
+        },
+      }, options);
+      await context!.registerTool({
+        name: 'organize_news_wall',
+        description: 'Arrange every Post-it into a non-overlapping grid while preserving all news content.',
+        inputSchema: { type: 'object', properties: {} },
+        execute: () => {
+          const organized = organizeWall(notesRef.current);
+          commitNotes(organized);
+          setLastEvent(`Agent organized ${organized.length} notes`);
+          return { success: true, count: organized.length, notes: organized.map(({ id, x, y }) => ({ id, x, y })) };
+        },
+      }, options);
+      await context!.registerTool({
+        name: 'get_fact_check_queue',
+        description: 'Read complete content for every Post-it whose author requested an external fact check.',
+        inputSchema: { type: 'object', properties: {} },
+        execute: () => {
+          const queued = notesRef.current.filter((note) => factStatus(note) === 'queued');
+          return { success: true, count: queued.length, notes: queued };
+        },
+      }, options);
+      await context!.registerTool({
+        name: 'set_news_fact_check',
+        description: 'After external research, write a verdict, concise explanation, and source URLs back to a news Post-it.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            id: { type: 'string' },
+            verdict: { type: 'string', enum: ['verified', 'disputed', 'inconclusive'] },
+            summary: { type: 'string' },
+            sources: { type: 'array', items: { type: 'string', format: 'uri' } },
+          },
+          required: ['id', 'verdict', 'summary', 'sources'],
+        },
+        execute: ({ id, verdict, summary, sources }) => {
+          const noteId = String(id);
+          const current = notesRef.current;
+          const target = current.find((note) => note.id === noteId);
+          if (!target) return { success: false, error: 'Note not found.' };
+          if (!FACT_CHECK_STATUSES.includes(verdict as FactCheckStatus) || !['verified', 'disputed', 'inconclusive'].includes(String(verdict))) {
+            return { success: false, error: 'Invalid fact-check verdict.' };
+          }
+          const factCheck: FactCheck = {
+            status: verdict as FactCheckStatus,
+            summary: String(summary).trim().slice(0, 700),
+            sources: Array.isArray(sources) ? sources.map(String).slice(0, 8) : [],
+            checkedAt: new Date().toISOString(),
+          };
+          commitNotes(current.map((note) => note.id === noteId ? { ...note, factCheck } : note));
+          setLastEvent(`Agent fact-checked “${target.title}”`);
+          return { success: true, id: noteId, factCheck };
+        },
+      }, options);
+      await context!.registerTool({
+        name: 'set_board_zoom',
+        description: 'Set the board zoom level. Use a value from 0.55 to 1.45; zooming out reveals more working space.',
+        inputSchema: { type: 'object', properties: { zoom: { type: 'number', minimum: 0.55, maximum: 1.45 } }, required: ['zoom'] },
+        execute: ({ zoom: requestedZoom }) => {
+          const next = setBoardZoom(Number(requestedZoom));
+          setLastEvent(`Agent set board zoom to ${Math.round(next * 100)}%`);
+          return { success: true, zoom: next };
+        },
+      }, options);
       setMcpStatus('ready');
     }
 
     registerTools().catch((error) => { console.error('WebMCP registration failed', error); setMcpStatus('preview') });
     return () => controller.abort();
-  }, [commitNotes]);
+  }, [commitNotes, setBoardZoom]);
 
   const visibleNotes = useMemo(() => activeFilter === 'ALL' ? notes : notes.filter((note) => note.category === activeFilter), [activeFilter, notes]);
   const counts = useMemo(() => Object.fromEntries(['ALL', ...CATEGORIES].map((item) => [item, item === 'ALL' ? notes.length : notes.filter((note) => note.category === item).length])), [notes]);
+  const boardHeight = useMemo(() => getBoardHeight(notes.length), [notes.length]);
+
+  const zoomBoard = (event: ReactWheelEvent<HTMLElement>) => {
+    event.preventDefault();
+    setBoardZoom(zoomRef.current + (event.deltaY < 0 ? 0.1 : -0.1));
+  };
 
   const resetComposer = () => { setHeadline(''); setStory(''); setCategory('WORLD'); setColor('yellow'); setEditingId(null) };
 
@@ -326,7 +437,7 @@ export default function Home() {
       setLastEvent(`Updated “${cleanHeadline}”`);
     } else {
       const next = createNote({ title: cleanHeadline, body: cleanStory, category, color }, notesRef.current.length);
-      commitNotes((current) => [...current, next].slice(-24));
+      commitNotes((current) => organizeWall([...current, next].slice(-24)));
       setActiveFilter('ALL');
       setLastEvent(`Pinned “${next.title}”`);
     }
@@ -336,6 +447,11 @@ export default function Home() {
   const editNote = (note: Note) => {
     setHeadline(note.title); setStory(note.body); setCategory(note.category); setColor(note.color); setEditingId(note.id);
     setLastEvent(`Editing “${note.title}”`);
+  };
+
+  const queueFactCheck = (note: Note) => {
+    commitNotes((current) => current.map((item) => item.id === note.id ? { ...item, factCheck: { status: 'queued' } } : item));
+    setLastEvent(`Queued “${note.title}” for fact-checking`);
   };
 
   const beginDrag = (event: ReactPointerEvent<HTMLElement>, note: Note) => {
@@ -376,7 +492,7 @@ export default function Home() {
     dropTimerRef.current = window.setTimeout(() => {
       setDroppingId((current) => current === dropped.id ? null : current);
       dropTimerRef.current = null;
-    }, 560);
+    }, 240);
   };
 
   return (
@@ -398,23 +514,32 @@ export default function Home() {
           </nav>
         </aside>
 
-        <section ref={stageRef} className="postit-stage" id="wall" aria-label="News Post-it wall"
-          onPointerMove={(event) => {
-            const rect = event.currentTarget.getBoundingClientRect();
-            pointerRef.current = [(event.clientX - rect.left) / rect.width, (event.clientY - rect.top) / rect.height];
-          }} onPointerLeave={() => { pointerRef.current = [0.5, 0.5] }}>
-          <canvas ref={canvasRef} aria-hidden="true" />
-          <div className="stage-label"><span>LIVE WALL / 28 AUG 2026</span><span>{visibleNotes.length} NOTES / DRAG TO ARRANGE</span></div>
-          {visibleNotes.length === 0 && <div className="empty-wall"><span>THE WALL IS QUIET</span><p>Write or paste the first story.</p></div>}
-          {visibleNotes.map((note) => (
-            <article key={note.id} className={`postit ${note.color}${draggingId === note.id ? ' is-dragging' : ''}${droppingId === note.id ? ' is-dropping' : ''}`} style={{ left: `${note.x}%`, top: `${note.y}%`, rotate: `${note.rotation}deg`, '--drag-tilt': `${droppingId === note.id ? dropTilt : dragTilt}deg` } as CSSProperties}
-              onPointerDown={(event) => beginDrag(event, note)} onPointerMove={dragNote} onPointerUp={endDrag} onPointerCancel={endDrag}>
-              <span className="tape" />
-              <div className="note-meta"><span>{note.category}</span><span>•</span></div>
-              <h2>{note.title}</h2><p>{note.body}</p>
-              <footer><span>JUST NOW</span><div><button onPointerDown={(event) => event.stopPropagation()} onClick={() => editNote(note)} aria-label={`Edit ${note.title}`}>✎</button><button onPointerDown={(event) => event.stopPropagation()} onClick={() => { commitNotes((current) => current.filter((item) => item.id !== note.id)); setLastEvent(`Removed “${note.title}”`) }} aria-label={`Remove ${note.title}`}>×</button></div></footer>
-            </article>
-          ))}
+        <section className="postit-stage" id="wall" aria-label="News Post-it wall" onWheel={zoomBoard}
+          onPointerLeave={() => { pointerRef.current = [0.5, 0.5] }}>
+          <div className="zoom-controls" aria-label="Board zoom controls">
+            <button type="button" onClick={() => setBoardZoom(zoomRef.current - 0.1)} aria-label="Zoom out">−</button>
+            <button type="button" className="zoom-readout" onClick={() => setBoardZoom(1)} aria-label="Reset board zoom">{Math.round(zoom * 100)}%</button>
+            <button type="button" onClick={() => setBoardZoom(zoomRef.current + 0.1)} aria-label="Zoom in">+</button>
+          </div>
+          <div ref={stageRef} className="board-world" style={{ width: `${100 / zoom}%`, minHeight: `${boardHeight / zoom}px`, transform: `scale(${zoom})` }}
+            onPointerMove={(event) => {
+              const rect = event.currentTarget.getBoundingClientRect();
+              pointerRef.current = [(event.clientX - rect.left) / rect.width, (event.clientY - rect.top) / rect.height];
+            }}>
+            <canvas ref={canvasRef} aria-hidden="true" />
+            <div className="stage-label"><span>LIVE WALL / 28 AUG 2026</span><span>{visibleNotes.length} NOTES / DRAG TO ARRANGE</span></div>
+            {visibleNotes.length === 0 && <div className="empty-wall"><span>THE WALL IS QUIET</span><p>Write or paste the first story.</p></div>}
+            {visibleNotes.map((note) => (
+              <article key={note.id} className={`postit ${note.color}${draggingId === note.id ? ' is-dragging' : ''}${droppingId === note.id ? ' is-dropping' : ''}`} style={{ left: `${note.x}%`, top: `${note.y}%`, rotate: `${note.rotation}deg`, '--drag-tilt': `${droppingId === note.id ? dropTilt : dragTilt}deg` } as CSSProperties}
+                onPointerDown={(event) => beginDrag(event, note)} onPointerMove={dragNote} onPointerUp={endDrag} onPointerCancel={endDrag}>
+                <span className="tape" />
+                <div className="note-meta"><span>{note.category}</span><span className={`fact-badge ${factStatus(note)}`} title={note.factCheck?.summary}>{factStatus(note).toUpperCase()}</span></div>
+                <h2>{note.title}</h2><p>{note.body}</p>
+                {note.factCheck?.summary && <p className="fact-summary"><b>{factStatus(note)}:</b> {note.factCheck.summary}</p>}
+                <footer><span>JUST NOW</span><div><button onPointerDown={(event) => event.stopPropagation()} onClick={() => queueFactCheck(note)} aria-label={`Queue ${note.title} for a fact check`}>?</button><button onPointerDown={(event) => event.stopPropagation()} onClick={() => editNote(note)} aria-label={`Edit ${note.title}`}>✎</button><button onPointerDown={(event) => event.stopPropagation()} onClick={() => { commitNotes((current) => current.filter((item) => item.id !== note.id)); setLastEvent(`Removed “${note.title}”`) }} aria-label={`Remove ${note.title}`}>×</button></div></footer>
+              </article>
+            ))}
+          </div>
         </section>
 
         <aside className="composer">
@@ -427,7 +552,7 @@ export default function Home() {
             <button type="submit" className="pin-button"><span>{editingId ? 'UPDATE THE NOTE' : 'PIN TO THE WALL'}</span><b>↗</b></button>
             {editingId && <button type="button" className="cancel-button" onClick={resetComposer}>CANCEL EDIT</button>}
           </form>
-          <p className="agent-note"><span /> {lastEvent} · 07 AGENT TOOLS EXPOSED</p>
+          <p className="agent-note"><span /> {lastEvent} · 12 AGENT TOOLS EXPOSED</p>
         </aside>
       </section>
     </main>
