@@ -138,6 +138,8 @@ button.fact-badge:hover { transform: translateY(-1px); box-shadow: 0 0 0 2px rgb
 .agent-log-panel > header b { color: #8f9286; font: 8px var(--font-geist-mono), monospace; letter-spacing: .09em; }
 .agent-log-panel > header button { height: 30px; padding: 0 10px; border: 1px solid rgba(255,255,255,.5); background: transparent; color: inherit; font: 8px var(--font-geist-mono), monospace; letter-spacing: .09em; }
 .agent-log-panel > header button:hover { background: var(--paper); color: var(--ink); }
+.agent-log-panel > header button:disabled { opacity: .35; cursor: default; background: transparent; color: inherit; }
+.log-header-actions { display: flex; gap: 7px; }
 .log-entries { padding: 8px 24px 22px; overflow-y: auto; }
 .log-columns, .log-entry { display: grid; grid-template-columns: 70px 72px 78px minmax(0, 1fr); align-items: baseline; gap: 10px; }
 .log-columns { padding: 8px 0 6px; border-bottom: 1px solid rgba(255,255,255,.24); color: #6f7169; font: 7px var(--font-geist-mono), monospace; letter-spacing: .1em; }

@@ -248,6 +248,11 @@ export default function Home() {
     return entry;
   }, [commitLogs]);
 
+  const clearAgentLog = useCallback(() => {
+    commitLogs([]);
+    setLastEvent('Cleared agent activity log');
+  }, [commitLogs]);
+
   const setBoardZoom = useCallback((value: number) => {
     const next = Math.round(clamp(value, 0.55, 1.45) * 20) / 20;
     zoomRef.current = next;
@@ -908,7 +913,7 @@ export default function Home() {
         </aside>
       </section>
       <section id="agent-log-panel" className={`agent-log-panel${logPanelOpen ? ' open' : ''}`} role="dialog" aria-label="Agent activity log" aria-hidden={!logPanelOpen}>
-        <header><div><span className="section-code">AGENT ACTIVITY</span><b>{String(agentLogs.length).padStart(2, '0')} ENTRIES</b></div><button type="button" onClick={() => setLogPanelOpen(false)} aria-label="Close agent log">CLOSE ×</button></header>
+        <header><div><span className="section-code">AGENT ACTIVITY</span><b>{String(agentLogs.length).padStart(2, '0')} ENTRIES</b></div><div className="log-header-actions"><button type="button" onClick={clearAgentLog} disabled={agentLogs.length === 0}>CLEAR LOG</button><button type="button" onClick={() => setLogPanelOpen(false)} aria-label="Close agent log">CLOSE ×</button></div></header>
         <div className="log-entries">
           {agentLogs.length === 0 && <p className="log-empty">No agent activity yet. Queue a fact check or import to begin.</p>}
           {agentLogs.length > 0 && <div className="log-columns" aria-hidden="true"><span>TIME</span><span>ACTOR</span><span>LEVEL</span><span>ACTION</span></div>}
