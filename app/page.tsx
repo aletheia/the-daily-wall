@@ -93,16 +93,32 @@ fn hash(p: vec2f) -> f32 {
 `;
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
-const getBoardHeight = (count: number) => Math.max(1200, Math.ceil(Math.max(count, 1) / 3) * 320 + 100);
+const getBoardHeight = (count: number) => Math.max(1200, Math.ceil(Math.max(count, 1) / 3) * 360 + 120);
 
 function organizeWall(current: Note[]): Note[] {
+  if (current.length === 0) return [];
+  const columns = Math.min(3, current.length);
+  const rows = Math.ceil(current.length / columns);
+  const noteWidth = 245;
+  const noteHeight = 215;
+  const horizontalGap = 70;
+  const verticalGap = 55;
   const boardHeight = getBoardHeight(current.length);
-  return current.map((note, index) => ({
-    ...note,
-    x: 4 + (index % 3) * 32,
-    y: ((Math.floor(index / 3) * 270 + 52) / boardHeight) * 100,
-    rotation: ROTATIONS[index % ROTATIONS.length] * 0.45,
-  }));
+  const groupHeight = rows * noteHeight + (rows - 1) * verticalGap;
+  const startY = (boardHeight - groupHeight) / 2;
+  return current.map((note, index) => {
+    const row = Math.floor(index / columns);
+    const column = index % columns;
+    const itemsInRow = Math.min(columns, current.length - row * columns);
+    const rowWidth = itemsInRow * noteWidth + (itemsInRow - 1) * horizontalGap;
+    const startX = (BOARD_WIDTH - rowWidth) / 2;
+    return {
+      ...note,
+      x: ((startX + column * (noteWidth + horizontalGap)) / BOARD_WIDTH) * 100,
+      y: ((startY + row * (noteHeight + verticalGap)) / boardHeight) * 100,
+      rotation: ROTATIONS[index % ROTATIONS.length] * 0.35,
+    };
+  });
 }
 
 const factStatus = (note: Note): FactCheckStatus => note.factCheck?.status ?? 'unverified';
@@ -168,6 +184,15 @@ export default function Home() {
     zoomRef.current = next;
     setZoom(next);
     return next;
+  }, []);
+
+  const centerBoardView = useCallback(() => {
+    window.requestAnimationFrame(() => {
+      const pane = paneRef.current;
+      if (!pane) return;
+      pane.scrollLeft = Math.max(0, (pane.scrollWidth - pane.clientWidth) / 2);
+      pane.scrollTop = Math.max(0, (pane.scrollHeight - pane.clientHeight) / 2);
+    });
   }, []);
 
   useEffect(() => {
@@ -374,6 +399,7 @@ export default function Home() {
         execute: () => {
           const organized = organizeWall(notesRef.current);
           commitNotes(organized);
+          centerBoardView();
           setLastEvent(`Agent organized ${organized.length} notes`);
           return { success: true, count: organized.length, notes: organized.map(({ id, x, y }) => ({ id, x, y })) };
         },
@@ -434,7 +460,7 @@ export default function Home() {
 
     registerTools().catch((error) => { console.error('WebMCP registration failed', error); setMcpStatus('preview') });
     return () => controller.abort();
-  }, [commitNotes, setBoardZoom]);
+  }, [centerBoardView, commitNotes, setBoardZoom]);
 
   const visibleNotes = useMemo(() => activeFilter === 'ALL' ? notes : notes.filter((note) => note.category === activeFilter), [activeFilter, notes]);
   const counts = useMemo(() => Object.fromEntries(['ALL', ...CATEGORIES].map((item) => [item, item === 'ALL' ? notes.length : notes.filter((note) => note.category === item).length])), [notes]);
@@ -445,9 +471,8 @@ export default function Home() {
     const pane = paneRef.current;
     if (!storageReady || centeredRef.current || !pane) return;
     centeredRef.current = true;
-    pane.scrollLeft = Math.max(0, (pane.scrollWidth - pane.clientWidth) / 2);
-    pane.scrollTop = Math.max(0, (pane.scrollHeight - pane.clientHeight) / 2);
-  }, [boardHeight, storageReady]);
+    centerBoardView();
+  }, [boardHeight, centerBoardView, storageReady]);
 
   const zoomBoard = (event: ReactWheelEvent<HTMLElement>) => {
     event.preventDefault();
@@ -593,7 +618,7 @@ export default function Home() {
 
         <section className="board-shell" id="wall" aria-label="News Post-it wall">
           <div className="zoom-controls" aria-label="Board zoom controls">
-            <button type="button" className="auto-layout-control" onClick={() => { const organized = organizeWall(notesRef.current); commitNotes(organized); setLastEvent(`Auto-arranged ${organized.length} notes`) }} aria-label="Automatically arrange all notes">AUTO LAYOUT</button>
+            <button type="button" className="auto-layout-control" onClick={() => { const organized = organizeWall(notesRef.current); commitNotes(organized); centerBoardView(); setLastEvent(`Auto-arranged ${organized.length} notes at the center`) }} aria-label="Automatically arrange all notes at the center of the board">AUTO LAYOUT</button>
             <button type="button" onClick={() => setBoardZoom(zoomRef.current - 0.1)} aria-label="Zoom out">−</button>
             <button type="button" className="zoom-readout" onClick={() => setBoardZoom(1)} aria-label="Reset board zoom">{Math.round(zoom * 100)}%</button>
             <button type="button" onClick={() => setBoardZoom(zoomRef.current + 0.1)} aria-label="Zoom in">+</button>
