@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from 'react';
 
 type NoteColor = 'yellow' | 'pink' | 'blue' | 'green' | 'orange';
 type Category = 'TECH' | 'WORLD' | 'CULTURE' | 'SCIENCE';
@@ -127,6 +127,7 @@ export default function Home() {
   const [gpuStatus, setGpuStatus] = useState<'loading' | 'ready' | 'fallback'>('loading');
   const [mcpStatus, setMcpStatus] = useState<'preview' | 'ready'>('preview');
   const [zoom, setZoom] = useState(1);
+  const [storageReady, setStorageReady] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const paneRef = useRef<HTMLElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
@@ -134,14 +135,17 @@ export default function Home() {
   const zoomRef = useRef(1);
   const pointerRef = useRef<[number, number]>([0.5, 0.5]);
   const storageReadyRef = useRef(false);
+  const centeredRef = useRef(false);
   const draggingRef = useRef<{ id: string; offsetX: number; offsetY: number; lastX: number } | null>(null);
   const panningRef = useRef<{ pointerId: number; startX: number; startY: number; scrollLeft: number; scrollTop: number } | null>(null);
   const dropTimerRef = useRef<number | null>(null);
+  const shredTimersRef = useRef<Map<string, number>>(new Map());
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [droppingId, setDroppingId] = useState<string | null>(null);
   const [dragTilt, setDragTilt] = useState(0);
   const [dropTilt, setDropTilt] = useState(0);
   const [isPanning, setIsPanning] = useState(false);
+  const [shreddingIds, setShreddingIds] = useState<string[]>([]);
 
   const commitNotes = useCallback((producer: Note[] | ((current: Note[]) => Note[])) => {
     setNotes((current) => {
@@ -169,6 +173,8 @@ export default function Home() {
         }
       } catch {
         storageReadyRef.current = true;
+      } finally {
+        setStorageReady(true);
       }
     }, 0);
     return () => window.clearTimeout(timer);
@@ -181,6 +187,8 @@ export default function Home() {
 
   useEffect(() => () => {
     if (dropTimerRef.current !== null) window.clearTimeout(dropTimerRef.current);
+    shredTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+    shredTimersRef.current.clear();
   }, []);
 
   useEffect(() => {
@@ -424,6 +432,14 @@ export default function Home() {
   const counts = useMemo(() => Object.fromEntries(['ALL', ...CATEGORIES].map((item) => [item, item === 'ALL' ? notes.length : notes.filter((note) => note.category === item).length])), [notes]);
   const boardHeight = useMemo(() => getBoardHeight(notes.length), [notes.length]);
 
+  useLayoutEffect(() => {
+    const pane = paneRef.current;
+    if (!storageReady || centeredRef.current || !pane) return;
+    centeredRef.current = true;
+    pane.scrollLeft = Math.max(0, (pane.scrollWidth - pane.clientWidth) / 2);
+    pane.scrollTop = Math.max(0, (pane.scrollHeight - pane.clientHeight) / 2);
+  }, [boardHeight, storageReady]);
+
   const zoomBoard = (event: ReactWheelEvent<HTMLElement>) => {
     event.preventDefault();
     setBoardZoom(zoomRef.current + (event.deltaY < 0 ? 0.1 : -0.1));
@@ -491,6 +507,20 @@ export default function Home() {
     setLastEvent(`Queued “${note.title}” for fact-checking`);
   };
 
+  const shredNote = (note: Note) => {
+    if (shredTimersRef.current.has(note.id)) return;
+    setShreddingIds((current) => [...current, note.id]);
+    setLastEvent(`Shredding “${note.title}”`);
+    const timer = window.setTimeout(() => {
+      commitNotes((current) => current.filter((item) => item.id !== note.id));
+      setShreddingIds((current) => current.filter((id) => id !== note.id));
+      shredTimersRef.current.delete(note.id);
+      if (editingId === note.id) resetComposer();
+      setLastEvent(`Removed “${note.title}”`);
+    }, 720);
+    shredTimersRef.current.set(note.id, timer);
+  };
+
   const beginDrag = (event: ReactPointerEvent<HTMLElement>, note: Note) => {
     if ((event.target as HTMLElement).closest('button')) return;
     const stage = stageRef.current;
@@ -551,15 +581,16 @@ export default function Home() {
           </nav>
         </aside>
 
-        <section ref={paneRef} className={`postit-stage${isPanning ? ' is-panning' : ''}`} id="wall" aria-label="News Post-it wall" onWheel={zoomBoard}
-          onPointerDown={beginPan} onPointerMove={panBoard} onPointerUp={endPan} onPointerCancel={endPan}
-          onPointerLeave={() => { pointerRef.current = [0.5, 0.5] }}>
+        <section className="board-shell" id="wall" aria-label="News Post-it wall">
           <div className="zoom-controls" aria-label="Board zoom controls">
             <button type="button" onClick={() => setBoardZoom(zoomRef.current - 0.1)} aria-label="Zoom out">−</button>
             <button type="button" className="zoom-readout" onClick={() => setBoardZoom(1)} aria-label="Reset board zoom">{Math.round(zoom * 100)}%</button>
             <button type="button" onClick={() => setBoardZoom(zoomRef.current + 0.1)} aria-label="Zoom in">+</button>
           </div>
-          <div className="board-scroll-space" style={{ width: `${BOARD_WIDTH * zoom}px`, height: `${boardHeight * zoom}px` }}>
+          <div ref={paneRef} className={`postit-stage${isPanning ? ' is-panning' : ''}`} onWheel={zoomBoard}
+            onPointerDown={beginPan} onPointerMove={panBoard} onPointerUp={endPan} onPointerCancel={endPan}
+            onPointerLeave={() => { pointerRef.current = [0.5, 0.5] }}>
+            <div className="board-scroll-space" style={{ width: `${BOARD_WIDTH * zoom}px`, height: `${boardHeight * zoom}px` }}>
             <div ref={stageRef} className="board-world" style={{ width: `${BOARD_WIDTH}px`, height: `${boardHeight}px`, transform: `scale(${zoom})` }}
               onPointerMove={(event) => {
                 const rect = event.currentTarget.getBoundingClientRect();
@@ -569,16 +600,17 @@ export default function Home() {
               <div className="stage-label"><span>LIVE WALL / 28 AUG 2026</span><span>{visibleNotes.length} NOTES / DRAG EMPTY BOARD TO PAN</span></div>
               {visibleNotes.length === 0 && <div className="empty-wall"><span>THE WALL IS QUIET</span><p>Write or paste the first story.</p></div>}
               {visibleNotes.map((note) => (
-                <article key={note.id} className={`postit ${note.color}${draggingId === note.id ? ' is-dragging' : ''}${droppingId === note.id ? ' is-dropping' : ''}`} style={{ left: `${note.x}%`, top: `${note.y}%`, rotate: `${note.rotation}deg`, '--drag-tilt': `${droppingId === note.id ? dropTilt : dragTilt}deg` } as CSSProperties}
+                <article key={note.id} className={`postit ${note.color}${draggingId === note.id ? ' is-dragging' : ''}${droppingId === note.id ? ' is-dropping' : ''}${shreddingIds.includes(note.id) ? ' is-shredding' : ''}`} style={{ left: `${note.x}%`, top: `${note.y}%`, rotate: `${note.rotation}deg`, '--drag-tilt': `${droppingId === note.id ? dropTilt : dragTilt}deg` } as CSSProperties}
                   onPointerDown={(event) => beginDrag(event, note)} onPointerMove={dragNote} onPointerUp={endDrag} onPointerCancel={endDrag}>
                   <span className="tape" />
                   <div className="note-meta"><span>{note.category}</span><span className={`fact-badge ${factStatus(note)}`} title={note.factCheck?.summary}>{factStatus(note).toUpperCase()}</span></div>
                   <h2>{note.title}</h2><p>{note.body}</p>
                   {note.factCheck?.summary && <p className="fact-summary"><b>{factStatus(note)}:</b> {note.factCheck.summary}</p>}
-                  <footer><span>JUST NOW</span><div><button onPointerDown={(event) => event.stopPropagation()} onClick={() => queueFactCheck(note)} aria-label={`Queue ${note.title} for a fact check`}>?</button><button onPointerDown={(event) => event.stopPropagation()} onClick={() => editNote(note)} aria-label={`Edit ${note.title}`}>✎</button><button onPointerDown={(event) => event.stopPropagation()} onClick={() => { commitNotes((current) => current.filter((item) => item.id !== note.id)); setLastEvent(`Removed “${note.title}”`) }} aria-label={`Remove ${note.title}`}>×</button></div></footer>
+                  <footer><span>JUST NOW</span><div><button onPointerDown={(event) => event.stopPropagation()} onClick={() => queueFactCheck(note)} aria-label={`Queue ${note.title} for a fact check`}>?</button><button onPointerDown={(event) => event.stopPropagation()} onClick={() => editNote(note)} aria-label={`Edit ${note.title}`}>✎</button><button onPointerDown={(event) => event.stopPropagation()} onClick={() => shredNote(note)} aria-label={`Shred ${note.title}`}>×</button></div></footer>
                 </article>
               ))}
             </div>
+          </div>
           </div>
         </section>
 
