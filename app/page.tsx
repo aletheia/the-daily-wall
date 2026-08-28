@@ -836,7 +836,7 @@ export default function Home() {
             <div className="rail-action-buttons">
               <button type="button" className="header-import" onClick={queueRecentNewsImport} disabled={importQueued}>{importQueued ? 'IMPORT QUEUED' : 'IMPORT RECENT NEWS'}</button>
               <button type="button" className="drawer-toggle" onClick={() => setDrawerOpen((current) => !current)} aria-expanded={drawerOpen} aria-controls="news-drawer">{drawerOpen ? 'CLOSE DRAWER' : 'OPEN DRAWER'}</button>
-              <button type="button" className="header-log" onClick={() => setLogPanelOpen((current) => !current)} aria-expanded={logPanelOpen} aria-controls="agent-log-panel">LOG <b>{String(agentLogs.length).padStart(2, '0')}</b></button>
+              <button type="button" className="header-log" onClick={() => setLogPanelOpen((current) => !current)} aria-expanded={logPanelOpen} aria-controls="agent-log-panel">{logPanelOpen ? 'CLOSE LOGS' : 'OPEN LOGS'}</button>
             </div>
           </div>
           <nav aria-label="Filter notes">
