@@ -97,14 +97,26 @@ fn hash(p: vec2f) -> f32 {
   let grain = hash(floor(p) + floor(time * 2.0)) - 0.5;
   let fibers = sin((uv.x * 920.0) + sin(uv.y * 170.0)) * 0.5 + 0.5;
   let weave = sin(uv.x * 1240.0) * sin(uv.y * 980.0) * 0.018;
-  let light = exp(-distance(uv, pointer) * 3.2);
+  let broadFibers = sin(uv.x * 84.0 + sin(uv.y * 51.0)) * sin(uv.y * 96.0) * 0.5 + 0.5;
+  let surfaceHeight = fibers * 0.018 + weave * 0.45 + broadFibers * 0.012 + grain * 0.008;
+  let normal = normalize(vec3f(-dpdx(surfaceHeight) * 44.0, -dpdy(surfaceHeight) * 44.0, 1.0));
+  let lightVector = normalize(vec3f(pointer - uv, 0.28));
+  let diffuse = max(dot(normal, lightVector), 0.0);
+  let specular = pow(max(dot(reflect(-lightVector, normal), vec3f(0.0, 0.0, 1.0)), 0.0), 18.0);
+  let light = exp(-distance(uv, pointer) * 3.6);
   let noteEnergy = min(params.board.x / 12.0, 1.0);
+  let edgeDistance = min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y));
+  let bevel = smoothstep(0.0, 0.045, edgeDistance);
   var color = vec3f(0.018, 0.019, 0.017);
-  color += vec3f(0.035, 0.045, 0.038) * light;
+  color += vec3f(0.03, 0.042, 0.034) * light;
   color += vec3f(grain * 0.018 + fibers * 0.009 + weave * 0.55);
+  color *= 0.78 + diffuse * 0.34;
+  color += vec3f(0.16, 0.19, 0.15) * specular * light;
   color += vec3f(0.012, 0.009, 0.002) * noteEnergy;
   let vignette = smoothstep(0.82, 0.2, distance(uv, vec2f(0.5)));
   color *= 0.76 + vignette * 0.32;
+  color *= 0.55 + bevel * 0.45;
+  color += vec3f(0.018, 0.02, 0.017) * smoothstep(0.0, 0.012, edgeDistance) * (1.0 - smoothstep(0.012, 0.045, edgeDistance));
   return vec4f(color, 1.0);
 }
 `;
