@@ -820,9 +820,12 @@ export default function Home() {
           <div><span className="section-code">01 / WALL</span><h1>What’s sticking <em>today?</em></h1></div>
           <p>A living wall for headlines, fragments and stories worth keeping in sight.</p>
           <div className="rail-actions">
-            <button type="button" className="header-import" onClick={queueRecentNewsImport} disabled={importQueued}>{importQueued ? 'IMPORT QUEUED' : 'IMPORT RECENT NEWS'}</button>
-            <button type="button" className="drawer-toggle" onClick={() => setDrawerOpen((current) => !current)} aria-expanded={drawerOpen} aria-controls="news-drawer">{drawerOpen ? 'CLOSE DRAWER' : 'OPEN DRAWER'}</button>
-            <button type="button" className="header-log" onClick={() => setLogPanelOpen(true)}>LOG <b>{String(agentLogs.length).padStart(2, '0')}</b></button>
+            <span className="rail-runtime-status"><i /> VGPU {gpuStatus === 'ready' ? 'LIVE' : gpuStatus.toUpperCase()} / WEBMCP {mcpStatus === 'ready' ? 'READY' : 'PREVIEW'}</span>
+            <div className="rail-action-buttons">
+              <button type="button" className="header-import" onClick={queueRecentNewsImport} disabled={importQueued}>{importQueued ? 'IMPORT QUEUED' : 'IMPORT RECENT NEWS'}</button>
+              <button type="button" className="drawer-toggle" onClick={() => setDrawerOpen((current) => !current)} aria-expanded={drawerOpen} aria-controls="news-drawer">{drawerOpen ? 'CLOSE DRAWER' : 'OPEN DRAWER'}</button>
+              <button type="button" className="header-log" onClick={() => setLogPanelOpen(true)}>LOG <b>{String(agentLogs.length).padStart(2, '0')}</b></button>
+            </div>
           </div>
           <nav aria-label="Filter notes">
             {(['ALL', ...CATEGORIES] as Filter[]).map((filter) => (
@@ -893,7 +896,7 @@ export default function Home() {
         </aside>
       </section>
       <section className={`agent-log-panel${logPanelOpen ? ' open' : ''}`} role="dialog" aria-label="Agent activity log" aria-hidden={!logPanelOpen}>
-        <header><div><span className="section-code">AGENT ACTIVITY</span><b>{String(agentLogs.length).padStart(2, '0')} ENTRIES</b><span className="log-runtime-status"><i /> VGPU {gpuStatus === 'ready' ? 'LIVE' : gpuStatus.toUpperCase()} / WEBMCP {mcpStatus === 'ready' ? 'READY' : 'PREVIEW'}</span></div><button type="button" onClick={() => setLogPanelOpen(false)} aria-label="Close agent log">CLOSE ×</button></header>
+        <header><div><span className="section-code">AGENT ACTIVITY</span><b>{String(agentLogs.length).padStart(2, '0')} ENTRIES</b></div><button type="button" onClick={() => setLogPanelOpen(false)} aria-label="Close agent log">CLOSE ×</button></header>
         <div className="log-entries">
           {agentLogs.length === 0 && <p className="log-empty">No agent activity yet. Queue a fact check or import to begin.</p>}
           {[...agentLogs].reverse().map((entry) => <article key={entry.id} className={`log-entry ${entry.level}`}><time>{entry.timestamp.slice(11, 16)} UTC</time><span>{entry.level}</span><p>{entry.message}</p></article>)}
