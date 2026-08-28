@@ -233,7 +233,7 @@ export default function Home() {
   const pointerRef = useRef<[number, number]>([0.5, 0.5]);
   const storageReadyRef = useRef(false);
   const centeredRef = useRef(false);
-  const draggingRef = useRef<{ id: string; offsetX: number; offsetY: number; lastX: number; startX: number; startY: number; moved: boolean } | null>(null);
+  const draggingRef = useRef<{ id: string; offsetX: number; offsetY: number; lastX: number; startX: number; startY: number; x: number; y: number; moved: boolean } | null>(null);
   const panningRef = useRef<{ pointerId: number; startX: number; startY: number; scrollLeft: number; scrollTop: number } | null>(null);
   const dropTimerRef = useRef<number | null>(null);
   const shredTimersRef = useRef<Map<string, number>>(new Map());
@@ -311,6 +311,18 @@ export default function Home() {
     });
     return sizes;
   }, []);
+
+  const moveStickerViaApi = useCallback((id: string, requestedX: number, requestedY: number, actor: AgentActor, options: { log?: boolean; announce?: boolean } = {}) => {
+    const current = notesRef.current;
+    const target = current.find((note) => note.id === id);
+    if (!target) return { success: false as const, error: 'Note not found.' };
+    const x = clamp(Number(requestedX), 0, 82);
+    const y = clamp(Number(requestedY), 0, 78);
+    commitNotes(current.map((note) => note.id === id ? { ...note, x, y } : note));
+    if (options.log !== false) appendLog(`Moved “${target.title}” to ${x.toFixed(1)}%, ${y.toFixed(1)}%.`, 'info', actor);
+    if (options.announce !== false) setLastEvent(`${actor === 'agent' ? 'Agent' : 'Human'} moved “${target.title}”`);
+    return { success: true as const, id, x, y };
+  }, [appendLog, commitNotes]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -503,12 +515,7 @@ export default function Home() {
           required: ['id', 'x', 'y'],
         },
         execute: ({ id, x, y }) => {
-          const noteId = String(id);
-          const current = notesRef.current;
-          if (!current.some((note) => note.id === noteId)) return { success: false, error: 'Note not found.' };
-          commitNotes(current.map((note) => note.id === noteId ? { ...note, x: clamp(Number(x), 0, 82), y: clamp(Number(y), 0, 78) } : note));
-          setLastEvent('Agent rearranged the wall');
-          return { success: true, id: noteId, x: Number(x), y: Number(y) };
+          return moveStickerViaApi(String(id), Number(x), Number(y), 'agent');
         },
       }, options);
       await context!.registerTool({
@@ -567,6 +574,7 @@ export default function Home() {
         execute: () => {
           const organized = organizeWall(notesRef.current, getRenderedNoteSizes());
           commitNotes(organized);
+          appendLog(`Auto-arranged ${organized.length} stickers without overlap.`, 'info', 'agent');
           centerBoardView();
           setLastEvent(`Agent organized ${organized.length} notes`);
           return { success: true, count: organized.length, notes: organized.map(({ id, x, y }) => ({ id, x, y })) };
@@ -679,7 +687,7 @@ export default function Home() {
 
     registerTools().catch((error) => { console.error('WebMCP registration failed', error); appendLog('WebMCP tool registration failed; agent controls are unavailable.', 'error', 'system'); setMcpStatus('preview') });
     return () => controller.abort();
-  }, [appendLog, centerBoardView, commitActions, commitNotes, getRenderedNoteSizes, setBoardZoom]);
+  }, [appendLog, centerBoardView, commitActions, commitNotes, getRenderedNoteSizes, moveStickerViaApi, setBoardZoom]);
 
   const visibleNotes = useMemo(() => activeFilter === 'ALL' ? notes : notes.filter((note) => note.category === activeFilter), [activeFilter, notes]);
   const counts = useMemo(() => Object.fromEntries(['ALL', ...CATEGORIES].map((item) => [item, item === 'ALL' ? notes.length : notes.filter((note) => note.category === item).length])), [notes]);
@@ -693,6 +701,7 @@ export default function Home() {
     const applyLayout = () => {
       const organized = organizeWall(notesRef.current, getRenderedNoteSizes());
       commitNotes(organized);
+      appendLog(`Auto-arranged ${organized.length} stickers without overlap.`, 'info', 'human');
       centerBoardView();
       setLastEvent(`Auto-arranged ${organized.length} notes at the center`);
     };
@@ -702,7 +711,7 @@ export default function Home() {
     }
     setActiveFilter('ALL');
     window.requestAnimationFrame(() => window.requestAnimationFrame(applyLayout));
-  }, [activeFilter, centerBoardView, commitNotes, getRenderedNoteSizes]);
+  }, [activeFilter, appendLog, centerBoardView, commitNotes, getRenderedNoteSizes]);
 
   useLayoutEffect(() => {
     const pane = paneRef.current;
@@ -849,7 +858,7 @@ export default function Home() {
     setDraggingId(note.id);
     setDragTilt(0);
     setDropTilt(0);
-    draggingRef.current = { id: note.id, offsetX: event.clientX - (rect.left + rect.width * note.x / 100), offsetY: event.clientY - (rect.top + rect.height * note.y / 100), lastX: event.clientX, startX: event.clientX, startY: event.clientY, moved: false };
+    draggingRef.current = { id: note.id, offsetX: event.clientX - (rect.left + rect.width * note.x / 100), offsetY: event.clientY - (rect.top + rect.height * note.y / 100), lastX: event.clientX, startX: event.clientX, startY: event.clientY, x: note.x, y: note.y, moved: false };
     event.currentTarget.setPointerCapture(event.pointerId);
   };
 
@@ -864,7 +873,9 @@ export default function Home() {
     const y = clamp(((event.clientY - rect.top - dragging.offsetY) / rect.height) * 100, 0, 78);
     setDragTilt(clamp((event.clientX - dragging.lastX) * 0.32, -4.5, 4.5));
     dragging.lastX = event.clientX;
-    commitNotes((current) => current.map((note) => note.id === dragging.id ? { ...note, x, y } : note));
+    dragging.x = x;
+    dragging.y = y;
+    moveStickerViaApi(dragging.id, x, y, 'human', { log: false, announce: false });
   };
 
   const endDrag = () => {
@@ -881,7 +892,7 @@ export default function Home() {
     setDropTilt(dragTilt);
     setDragTilt(0);
     setDroppingId(dropped.id);
-    setLastEvent('Note landed on the wall');
+    moveStickerViaApi(dropped.id, dropped.x, dropped.y, 'human');
     dropTimerRef.current = window.setTimeout(() => {
       setDroppingId((current) => current === dropped.id ? null : current);
       dropTimerRef.current = null;
