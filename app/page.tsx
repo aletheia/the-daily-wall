@@ -31,10 +31,12 @@ type AgentAction = {
   createdAt: string;
 };
 type AgentLogLevel = 'info' | 'success' | 'warning' | 'error';
+type AgentActor = 'human' | 'agent' | 'system';
 type AgentLog = {
   id: string;
   timestamp: string;
   level: AgentLogLevel;
+  actor: AgentActor;
   message: string;
 };
 
@@ -58,6 +60,7 @@ const COLORS: NoteColor[] = ['yellow', 'pink', 'blue', 'green', 'orange'];
 const CATEGORIES: Category[] = ['TECH', 'WORLD', 'CULTURE', 'SCIENCE'];
 const FACT_CHECK_STATUSES: FactCheckStatus[] = ['unverified', 'queued', 'verified', 'disputed', 'inconclusive'];
 const AGENT_LOG_LEVELS: AgentLogLevel[] = ['info', 'success', 'warning', 'error'];
+const AGENT_ACTORS: AgentActor[] = ['human', 'agent', 'system'];
 const BOARD_WIDTH = 1600;
 const LAYOUT = [[6, 9], [38, 5], [68, 14], [16, 52], [53, 54], [72, 58], [6, 68]];
 const ROTATIONS = [-3, 2, 4, 3, -2, 1, -4];
@@ -231,13 +234,14 @@ export default function Home() {
     });
   }, []);
 
-  const appendLog = useCallback((message: string, level: AgentLogLevel = 'info') => {
+  const appendLog = useCallback((message: string, level: AgentLogLevel = 'info', actor: AgentActor = 'system') => {
     const cleanMessage = message.trim().slice(0, 500);
     if (!cleanMessage) return null;
     const entry: AgentLog = {
       id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       timestamp: new Date().toISOString(),
       level,
+      actor,
       message: cleanMessage,
     };
     commitLogs((current) => [...current, entry].slice(-100));
@@ -277,7 +281,7 @@ export default function Home() {
         }
         if (storedLogs) {
           const parsed = JSON.parse(storedLogs) as AgentLog[];
-          if (Array.isArray(parsed)) commitLogs(parsed.slice(-100));
+          if (Array.isArray(parsed)) commitLogs(parsed.slice(-100).map((entry) => ({ ...entry, actor: AGENT_ACTORS.includes(entry.actor) ? entry.actor : 'system' })));
         }
       } catch {
         storageReadyRef.current = true;
@@ -330,12 +334,13 @@ export default function Home() {
         stop = () => { handle.stop(); gpu.dispose() };
       } catch (error) {
         console.error('Fact-check renderer failed', error);
+        appendLog('Fact-check visual renderer failed; the text fallback remains available.', 'error', 'system');
       }
     }
 
     startFactPanel();
     return () => { active = false; stop?.() };
-  }, [expandedFactId]);
+  }, [appendLog, expandedFactId]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -365,13 +370,14 @@ export default function Home() {
         setGpuStatus('ready');
       } catch (error) {
         console.error('Board renderer failed', error);
+        appendLog('Board renderer failed; the static board fallback is active.', 'error', 'system');
         setGpuStatus('fallback');
       }
     }
 
     startBoard();
     return () => { active = false; stop?.() };
-  }, []);
+  }, [appendLog]);
 
   useEffect(() => {
     const context = document.modelContext;
@@ -407,7 +413,7 @@ export default function Home() {
           const organized = organizeWall([...current, next].slice(-24));
           const created = organized.find((note) => note.id === next.id) ?? next;
           commitNotes(organized);
-          appendLog(`Pinned “${next.title}” to the news wall.`, 'success');
+          appendLog(`Pinned “${next.title}” to the news wall.`, 'success', 'agent');
           setLastEvent(`Agent pinned “${next.title}”`);
           return { success: true, note: created, wallOrganized: true };
         },
@@ -555,7 +561,7 @@ export default function Home() {
             checkedAt: new Date().toISOString(),
           };
           commitNotes(current.map((note) => note.id === noteId ? { ...note, factCheck } : note));
-          appendLog(`Fact-check completed for “${target.title}”: ${String(verdict)}.`, 'success');
+          appendLog(`Fact-check completed for “${target.title}”: ${String(verdict)}.`, 'success', 'agent');
           setLastEvent(`Agent fact-checked “${target.title}”`);
           return { success: true, id: noteId, factCheck };
         },
@@ -584,7 +590,7 @@ export default function Home() {
         },
         execute: ({ message, level }) => {
           const safeLevel = AGENT_LOG_LEVELS.includes(level as AgentLogLevel) ? level as AgentLogLevel : 'info';
-          const entry = appendLog(String(message ?? ''), safeLevel);
+          const entry = appendLog(String(message ?? ''), safeLevel, 'agent');
           return entry ? { success: true, log: entry } : { success: false, error: 'A log message is required.' };
         },
       }, options);
@@ -605,7 +611,7 @@ export default function Home() {
           if (!action) return { success: false, error: 'Queued action not found.' };
           commitActions((current) => current.filter((item) => item.id !== actionId));
           const cleanSummary = String(summary ?? '').trim() || 'Agent action completed.';
-          appendLog(cleanSummary, 'success');
+          appendLog(cleanSummary, 'success', 'agent');
           setLastEvent(cleanSummary);
           return { success: true, completed: action };
         },
@@ -623,7 +629,7 @@ export default function Home() {
       setMcpStatus('ready');
     }
 
-    registerTools().catch((error) => { console.error('WebMCP registration failed', error); setMcpStatus('preview') });
+    registerTools().catch((error) => { console.error('WebMCP registration failed', error); appendLog('WebMCP tool registration failed; agent controls are unavailable.', 'error', 'system'); setMcpStatus('preview') });
     return () => controller.abort();
   }, [appendLog, centerBoardView, commitActions, commitNotes, setBoardZoom]);
 
@@ -706,13 +712,13 @@ export default function Home() {
       createdAt: new Date().toISOString(),
     };
     commitActions((current) => [...current, action].slice(-20));
-    appendLog('Recent-news import queued. Waiting for a connected agent.', 'info');
+    appendLog('Recent-news import queued. Waiting for a connected agent.', 'info', 'human');
     setLastEvent('Recent-news import queued for a connected agent');
   };
 
   const cancelAgentAction = (action: AgentAction) => {
     commitActions((current) => current.filter((item) => item.id !== action.id));
-    appendLog('Recent-news import removed from the agent queue.', 'warning');
+    appendLog('Recent-news import removed from the agent queue.', 'warning', 'human');
     setLastEvent('Cancelled recent-news import');
   };
 
@@ -741,7 +747,7 @@ export default function Home() {
   const enqueueFactCheck = (note: Note) => {
     if (factStatus(note) === 'queued') return false;
     commitNotes((current) => current.map((item) => item.id === note.id ? { ...item, factCheck: { status: 'queued' } } : item));
-    appendLog(`Queued “${note.title}” for fact checking.`, 'info');
+    appendLog(`Queued “${note.title}” for fact checking.`, 'info', 'human');
     setLastEvent(`Queued “${note.title}” — ask a connected agent to process the queue`);
     return true;
   };
@@ -752,7 +758,7 @@ export default function Home() {
       return;
     }
     commitNotes((current) => current.map((item) => item.id === note.id ? { ...item, factCheck: { status: 'unverified' } } : item));
-    appendLog(`Removed “${note.title}” from the fact-check queue.`, 'warning');
+    appendLog(`Removed “${note.title}” from the fact-check queue.`, 'warning', 'human');
     setLastEvent(`Cancelled fact-check for “${note.title}”`);
   };
 
@@ -905,7 +911,8 @@ export default function Home() {
         <header><div><span className="section-code">AGENT ACTIVITY</span><b>{String(agentLogs.length).padStart(2, '0')} ENTRIES</b></div><button type="button" onClick={() => setLogPanelOpen(false)} aria-label="Close agent log">CLOSE ×</button></header>
         <div className="log-entries">
           {agentLogs.length === 0 && <p className="log-empty">No agent activity yet. Queue a fact check or import to begin.</p>}
-          {[...agentLogs].reverse().map((entry) => <article key={entry.id} className={`log-entry ${entry.level}`}><time>{entry.timestamp.slice(11, 16)} UTC</time><span>{entry.level}</span><p>{entry.message}</p></article>)}
+          {agentLogs.length > 0 && <div className="log-columns" aria-hidden="true"><span>TIME</span><span>ACTOR</span><span>LEVEL</span><span>ACTION</span></div>}
+          {[...agentLogs].reverse().map((entry) => <article key={entry.id} className={`log-entry ${entry.level}`}><time>{entry.timestamp.slice(11, 16)} UTC</time><span className={`log-actor ${entry.actor ?? 'system'}`}>{entry.actor ?? 'system'}</span><span className="log-level">{entry.level}</span><p>{entry.message}</p></article>)}
         </div>
       </section>
     </main>
