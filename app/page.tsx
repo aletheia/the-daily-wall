@@ -47,6 +47,14 @@ const FACT_CHECK_STATUSES: FactCheckStatus[] = ['unverified', 'queued', 'verifie
 const BOARD_WIDTH = 1600;
 const LAYOUT = [[6, 9], [38, 5], [68, 14], [16, 52], [53, 54], [72, 58], [6, 68]];
 const ROTATIONS = [-3, 2, 4, 3, -2, 1, -4];
+const CONFETTI_PIECES = Array.from({ length: 22 }, (_, index) => ({
+  left: 3 + ((index * 19) % 92),
+  top: 8 + ((index * 31) % 78),
+  drift: -70 + ((index * 37) % 140),
+  fall: 145 + ((index * 23) % 95),
+  spin: -220 + ((index * 83) % 440),
+  delay: 470 + (index % 6) * 24,
+}));
 
 const INITIAL_NOTES: Note[] = [
   { id: 'open-models', category: 'TECH', title: 'Open models close the gap', body: 'Small, specialized models are becoming the default for focused newsroom workflows.', color: 'yellow', x: 6, y: 9, rotation: -3, createdAt: '2026-08-28T07:40:00.000Z' },
@@ -431,6 +439,7 @@ export default function Home() {
   const visibleNotes = useMemo(() => activeFilter === 'ALL' ? notes : notes.filter((note) => note.category === activeFilter), [activeFilter, notes]);
   const counts = useMemo(() => Object.fromEntries(['ALL', ...CATEGORIES].map((item) => [item, item === 'ALL' ? notes.length : notes.filter((note) => note.category === item).length])), [notes]);
   const boardHeight = useMemo(() => getBoardHeight(notes.length), [notes.length]);
+  const queuedFactChecks = useMemo(() => notes.filter((note) => factStatus(note) === 'queued').length, [notes]);
 
   useLayoutEffect(() => {
     const pane = paneRef.current;
@@ -503,8 +512,9 @@ export default function Home() {
   };
 
   const queueFactCheck = (note: Note) => {
-    commitNotes((current) => current.map((item) => item.id === note.id ? { ...item, factCheck: { status: 'queued' } } : item));
-    setLastEvent(`Queued “${note.title}” for fact-checking`);
+    const cancelling = factStatus(note) === 'queued';
+    commitNotes((current) => current.map((item) => item.id === note.id ? { ...item, factCheck: { status: cancelling ? 'unverified' : 'queued' } } : item));
+    setLastEvent(cancelling ? `Cancelled fact-check for “${note.title}”` : `Queued “${note.title}” — ask a connected agent to process the queue`);
   };
 
   const shredNote = (note: Note) => {
@@ -517,7 +527,7 @@ export default function Home() {
       shredTimersRef.current.delete(note.id);
       if (editingId === note.id) resetComposer();
       setLastEvent(`Removed “${note.title}”`);
-    }, 720);
+    }, 1100);
     shredTimersRef.current.set(note.id, timer);
   };
 
@@ -571,15 +581,15 @@ export default function Home() {
       </header>
 
       <section className="news-layout">
-        <aside className="rail">
-          <div><span className="section-code">01 / WALL</span><h1>What’s<br />sticking<br /><em>today?</em></h1></div>
+        <header className="rail">
+          <div><span className="section-code">01 / WALL</span><h1>What’s sticking <em>today?</em></h1></div>
           <p>A living wall for headlines, fragments and stories worth keeping in sight.</p>
           <nav aria-label="Filter notes">
             {(['ALL', ...CATEGORIES] as Filter[]).map((filter) => (
               <button key={filter} className={activeFilter === filter ? 'active' : ''} onClick={() => setActiveFilter(filter)}>{filter === 'ALL' ? 'ALL NOTES' : filter}<b>{String(counts[filter] ?? 0).padStart(2, '0')}</b></button>
             ))}
           </nav>
-        </aside>
+        </header>
 
         <section className="board-shell" id="wall" aria-label="News Post-it wall">
           <div className="zoom-controls" aria-label="Board zoom controls">
@@ -607,6 +617,7 @@ export default function Home() {
                   <h2>{note.title}</h2><p>{note.body}</p>
                   {note.factCheck?.summary && <p className="fact-summary"><b>{factStatus(note)}:</b> {note.factCheck.summary}</p>}
                   <footer><span>JUST NOW</span><div><button onPointerDown={(event) => event.stopPropagation()} onClick={() => queueFactCheck(note)} aria-label={`Queue ${note.title} for a fact check`}>?</button><button onPointerDown={(event) => event.stopPropagation()} onClick={() => editNote(note)} aria-label={`Edit ${note.title}`}>✎</button><button onPointerDown={(event) => event.stopPropagation()} onClick={() => shredNote(note)} aria-label={`Shred ${note.title}`}>×</button></div></footer>
+                  {shreddingIds.includes(note.id) && <span className="shred-confetti" aria-hidden="true">{CONFETTI_PIECES.map((piece, index) => <i key={index} style={{ left: `${piece.left}%`, top: `${piece.top}%`, '--confetti-x': `${piece.drift}px`, '--confetti-y': `${piece.fall}px`, '--confetti-spin': `${piece.spin}deg`, '--confetti-delay': `${piece.delay}ms` } as CSSProperties} />)}</span>}
                 </article>
               ))}
             </div>
@@ -624,6 +635,10 @@ export default function Home() {
             <button type="submit" className="pin-button"><span>{editingId ? 'UPDATE THE NOTE' : 'PIN TO THE WALL'}</span><b>↗</b></button>
             {editingId && <button type="button" className="cancel-button" onClick={resetComposer}>CANCEL EDIT</button>}
           </form>
+          <div className="fact-check-help">
+            <span className="section-code">03 / FACT CHECKS · {String(queuedFactChecks).padStart(2, '0')} WAITING</span>
+            <p>The <b>?</b> button adds or removes a note from the WebMCP queue. A connected agent must research queued notes and write its verdict back; this page cannot wake an agent on its own.</p>
+          </div>
           <p className="agent-note"><span /> {lastEvent} · 12 AGENT TOOLS EXPOSED</p>
         </aside>
       </section>
