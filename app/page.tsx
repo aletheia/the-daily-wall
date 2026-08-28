@@ -96,13 +96,27 @@ fn hash(p: vec2f) -> f32 {
   let weave = sin(uv.x * 1240.0) * sin(uv.y * 980.0) * 0.018;
   let light = exp(-distance(uv, pointer) * 3.2);
   let noteEnergy = min(params.board.x / 12.0, 1.0);
-  var color = vec3f(0.045, 0.165, 0.135);
-  color += vec3f(0.035, 0.11, 0.09) * light;
-  color += vec3f(grain * 0.025 + fibers * 0.012 + weave);
-  color += vec3f(0.018, 0.012, 0.0) * noteEnergy;
+  var color = vec3f(0.018, 0.019, 0.017);
+  color += vec3f(0.035, 0.045, 0.038) * light;
+  color += vec3f(grain * 0.018 + fibers * 0.009 + weave * 0.55);
+  color += vec3f(0.012, 0.009, 0.002) * noteEnergy;
   let vignette = smoothstep(0.82, 0.2, distance(uv, vec2f(0.5)));
   color *= 0.76 + vignette * 0.32;
   return vec4f(color, 1.0);
+}
+`;
+
+const FACT_PANEL_SHADER = /* wgsl */ `
+struct Params { motion: vec4f }
+@group(0) @binding(0) var<uniform> params: Params;
+
+@fragment fn fs_main(@location(0) uv: vec2f) -> @location(0) vec4f {
+  let time = params.motion.x;
+  let sweep = smoothstep(0.0, 0.18, 1.0 - abs(uv.x - fract(time * 0.16)) * 7.0);
+  let scan = 0.5 + 0.5 * sin((uv.y * 42.0) - time * 2.4);
+  let edge = smoothstep(0.12, 0.0, min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y)));
+  let ink = vec3f(0.10, 0.26, 0.14) * (0.18 + sweep * 0.32 + scan * 0.04 + edge * 0.08);
+  return vec4f(ink, 0.5);
 }
 `;
 
@@ -170,7 +184,9 @@ export default function Home() {
   const [agentLogs, setAgentLogs] = useState<AgentLog[]>([]);
   const [logPanelOpen, setLogPanelOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(true);
+  const [expandedFactId, setExpandedFactId] = useState<string | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const factCanvasRef = useRef<HTMLCanvasElement>(null);
   const paneRef = useRef<HTMLElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const notesRef = useRef<Note[]>(INITIAL_NOTES);
@@ -292,6 +308,34 @@ export default function Home() {
     shredTimersRef.current.forEach((timer) => window.clearTimeout(timer));
     shredTimersRef.current.clear();
   }, []);
+
+  useEffect(() => {
+    const canvas = factCanvasRef.current;
+    if (!canvas || !expandedFactId) return;
+    let active = true;
+    let stop: (() => void) | undefined;
+
+    async function startFactPanel() {
+      try {
+        const { effect, frameLoop, init, surface } = await import('vgpu');
+        if (!active || !canvas) return;
+        const gpu = await init();
+        const target = surface(gpu, canvas, { dpr: [1, 1.25] });
+        const panel = effect(gpu, FACT_PANEL_SHADER, { set: { params: { motion: [0, 0, 0, 0] } } });
+        const started = performance.now();
+        const handle = frameLoop(gpu, (frame) => {
+          panel.set({ params: { motion: [(performance.now() - started) / 1000, 0, 0, 0] } });
+          frame.pass(target, panel);
+        }, { fps: 30 });
+        stop = () => { handle.stop(); gpu.dispose() };
+      } catch (error) {
+        console.error('Fact-check renderer failed', error);
+      }
+    }
+
+    startFactPanel();
+    return () => { active = false; stop?.() };
+  }, [expandedFactId]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -771,19 +815,11 @@ export default function Home() {
 
   return (
     <main className="newsroom-shell">
-      <header className="newsroom-header">
-        <a href="#wall" className="news-brand"><span className="brand-pin" />THE DAILY WALL</a>
-        <p>NEWS, PINNED IN PUBLIC</p>
-        <div className="header-actions">
-          <div className="header-status"><span /> VGPU {gpuStatus === 'ready' ? 'LIVE' : gpuStatus.toUpperCase()} / WEBMCP {mcpStatus === 'ready' ? 'READY' : 'PREVIEW'}</div>
-          <button type="button" className="drawer-toggle" onClick={() => setDrawerOpen((current) => !current)} aria-expanded={drawerOpen} aria-controls="news-drawer">{drawerOpen ? 'CLOSE DRAWER' : 'OPEN DRAWER'}</button>
-        </div>
-      </header>
-
       <section className={`news-layout${drawerOpen ? '' : ' drawer-closed'}`}>
         <header className="rail">
           <div><span className="section-code">01 / WALL</span><h1>What’s sticking <em>today?</em></h1></div>
           <p>A living wall for headlines, fragments and stories worth keeping in sight.</p>
+          <button type="button" className="drawer-toggle" onClick={() => setDrawerOpen((current) => !current)} aria-expanded={drawerOpen} aria-controls="news-drawer">{drawerOpen ? 'CLOSE DRAWER' : 'OPEN DRAWER'}</button>
           <nav aria-label="Filter notes">
             {(['ALL', ...CATEGORIES] as Filter[]).map((filter) => (
               <button key={filter} className={activeFilter === filter ? 'active' : ''} onClick={() => setActiveFilter(filter)}>{filter === 'ALL' ? 'ALL NOTES' : filter}<b>{String(counts[filter] ?? 0).padStart(2, '0')}</b></button>
@@ -801,7 +837,7 @@ export default function Home() {
           <div ref={paneRef} className={`postit-stage${isPanning ? ' is-panning' : ''}`} onWheel={zoomBoard}
             onPointerDown={beginPan} onPointerMove={panBoard} onPointerUp={endPan} onPointerCancel={endPan}
             onPointerLeave={() => { pointerRef.current = [0.5, 0.5] }}>
-            <div className="board-scroll-space" style={{ width: `${BOARD_WIDTH * zoom}px`, height: `${boardHeight * zoom}px` }}>
+            <div className="board-scroll-space" style={{ width: `max(${BOARD_WIDTH * zoom}px, 100%)`, height: `max(${boardHeight * zoom}px, 100%)` }}>
             <div ref={stageRef} className="board-world" style={{ width: `${BOARD_WIDTH}px`, height: `${boardHeight}px`, transform: `scale(${zoom})` }}
               onPointerMove={(event) => {
                 const rect = event.currentTarget.getBoundingClientRect();
@@ -811,13 +847,17 @@ export default function Home() {
               <div className="stage-label"><span>LIVE WALL / 28 AUG 2026</span><span>{visibleNotes.length} NOTES / DRAG EMPTY BOARD TO PAN</span></div>
               {visibleNotes.length === 0 && <div className="empty-wall"><span>THE WALL IS QUIET</span><p>Write or paste the first story.</p></div>}
               {visibleNotes.map((note) => (
-                <article key={note.id} className={`postit ${note.color}${draggingId === note.id ? ' is-dragging' : ''}${droppingId === note.id ? ' is-dropping' : ''}${shreddingIds.includes(note.id) ? ' is-shredding' : ''}`} style={{ left: `${note.x}%`, top: `${note.y}%`, rotate: `${note.rotation}deg`, '--drag-tilt': `${droppingId === note.id ? dropTilt : dragTilt}deg` } as CSSProperties}
+                <article key={note.id} className={`postit ${note.color}${draggingId === note.id ? ' is-dragging' : ''}${droppingId === note.id ? ' is-dropping' : ''}${shreddingIds.includes(note.id) ? ' is-shredding' : ''}${expandedFactId === note.id ? ' is-expanded' : ''}`} style={{ left: `${note.x}%`, top: `${note.y}%`, rotate: `${note.rotation}deg`, '--drag-tilt': `${droppingId === note.id ? dropTilt : dragTilt}deg` } as CSSProperties}
                   onPointerDown={(event) => beginDrag(event, note)} onPointerMove={dragNote} onPointerUp={endDrag} onPointerCancel={endDrag}>
                   <span className="tape" />
-                  <div className="note-meta"><span>{note.category}</span><span className={`fact-badge ${factStatus(note)}`} title={note.factCheck?.summary}>{factStatus(note).toUpperCase()}</span></div>
+                  <div className="note-meta"><span>{note.category}</span>{note.factCheck?.summary ? <button type="button" className={`fact-badge ${factStatus(note)}`} title="Show fact-check details" aria-expanded={expandedFactId === note.id} onPointerDown={(event) => event.stopPropagation()} onClick={() => setExpandedFactId((current) => current === note.id ? null : note.id)}>{factStatus(note).toUpperCase()}</button> : <span className={`fact-badge ${factStatus(note)}`}>{factStatus(note).toUpperCase()}</span>}</div>
                   <h2>{note.title}</h2><p>{note.body}</p>
-                  {note.factCheck?.summary && <p className="fact-summary"><b>{factStatus(note)}:</b> {note.factCheck.summary}</p>}
-                  <footer><span>JUST NOW</span><div><button onPointerDown={(event) => event.stopPropagation()} onClick={() => queueFactCheck(note)} aria-label={`Queue ${note.title} for a fact check`}>?</button><button onPointerDown={(event) => event.stopPropagation()} onClick={() => editNote(note)} aria-label={`Edit ${note.title}`}>✎</button><button onPointerDown={(event) => event.stopPropagation()} onClick={() => shredNote(note)} aria-label={`Shred ${note.title}`}>×</button></div></footer>
+                  {expandedFactId === note.id && note.factCheck?.summary && <section className="fact-expansion" onPointerDown={(event) => event.stopPropagation()}>
+                    <canvas ref={factCanvasRef} aria-hidden="true" />
+                    <div><span className="fact-expansion-label">FACT-CHECK COMMENT</span><p><b>{factStatus(note)}</b> — {note.factCheck.summary}</p>
+                    {!!note.factCheck.sources?.length && <div className="fact-sources">{note.factCheck.sources.map((source, index) => <a key={`${source}-${index}`} href={source} target="_blank" rel="noreferrer">SOURCE {String(index + 1).padStart(2, '0')} ↗</a>)}</div>}</div>
+                  </section>}
+                  <footer><span>JUST NOW</span><div><button className="note-action fact-action" onPointerDown={(event) => event.stopPropagation()} onClick={() => queueFactCheck(note)} aria-label={`Queue ${note.title} for a fact check`} title="Fact check"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6" /></svg></button><button className="note-action edit-action" onPointerDown={(event) => event.stopPropagation()} onClick={() => editNote(note)} aria-label={`Edit ${note.title}`} title="Edit"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 20 4.4-1 10.8-10.8-3.4-3.4L5 15.6 4 20Z" /><path d="m14.8 5.8 3.4 3.4" /></svg></button><button className="note-action delete-action" onPointerDown={(event) => event.stopPropagation()} onClick={() => shredNote(note)} aria-label={`Shred ${note.title}`} title="Delete"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M9 7V4h6v3m-8 0 1 13h8l1-13M10 11v5m4-5v5" /></svg></button></div></footer>
                   {shreddingIds.includes(note.id) && <span className="shred-confetti" aria-hidden="true">{CONFETTI_PIECES.map((piece, index) => <i key={index} style={{ left: `${piece.left}%`, top: `${piece.top}%`, '--confetti-x': `${piece.drift}px`, '--confetti-y': `${piece.fall}px`, '--confetti-spin': `${piece.spin}deg`, '--confetti-delay': `${piece.delay}ms` } as CSSProperties} />)}</span>}
                 </article>
               ))}
@@ -856,7 +896,7 @@ export default function Home() {
         </aside>
       </section>
       <section className={`agent-log-panel${logPanelOpen ? ' open' : ''}`} role="dialog" aria-label="Agent activity log" aria-hidden={!logPanelOpen}>
-        <header><div><span className="section-code">AGENT ACTIVITY</span><b>{String(agentLogs.length).padStart(2, '0')} ENTRIES</b></div><button type="button" onClick={() => setLogPanelOpen(false)} aria-label="Close agent log">CLOSE ×</button></header>
+        <header><div><span className="section-code">AGENT ACTIVITY</span><b>{String(agentLogs.length).padStart(2, '0')} ENTRIES</b><span className="log-runtime-status"><i /> VGPU {gpuStatus === 'ready' ? 'LIVE' : gpuStatus.toUpperCase()} / WEBMCP {mcpStatus === 'ready' ? 'READY' : 'PREVIEW'}</span></div><button type="button" onClick={() => setLogPanelOpen(false)} aria-label="Close agent log">CLOSE ×</button></header>
         <div className="log-entries">
           {agentLogs.length === 0 && <p className="log-empty">No agent activity yet. Queue a fact check or import to begin.</p>}
           {[...agentLogs].reverse().map((entry) => <article key={entry.id} className={`log-entry ${entry.level}`}><time>{entry.timestamp.slice(11, 16)} UTC</time><span>{entry.level}</span><p>{entry.message}</p></article>)}
