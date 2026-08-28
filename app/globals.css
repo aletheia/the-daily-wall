@@ -50,7 +50,7 @@ button { cursor: pointer; }
 .board-world { position: absolute; inset: 0 auto auto 0; background: radial-gradient(circle at 32% 24%, #252824, #0c0d0c 70%), repeating-linear-gradient(87deg, rgba(255,255,255,.018) 0 1px, transparent 1px 4px), var(--board); transform-origin: 0 0; }
 .board-world canvas { position: absolute; inset: 0; width: 100%; height: 100%; opacity: .78; background: radial-gradient(circle at 50% 30%, #252824, #0c0d0c 70%); }
 .board-world::after { content: ''; position: absolute; inset: 0; pointer-events: none; background: repeating-linear-gradient(0deg, rgba(255,255,255,.015) 0 1px, transparent 1px 5px); mix-blend-mode: screen; }
-.zoom-controls { position: absolute; z-index: 60; top: 14px; right: 14px; width: max-content; display: flex; background: rgba(242,239,230,.94); border: 1px solid rgba(19,21,16,.45); box-shadow: 0 8px 24px rgba(0,0,0,.2); }
+.zoom-controls { position: absolute; z-index: 60; top: 14px; right: 32px; width: max-content; display: flex; background: rgba(242,239,230,.94); border: 1px solid rgba(19,21,16,.45); box-shadow: 0 8px 24px rgba(0,0,0,.2); }
 .zoom-controls button { min-width: 36px; height: 36px; border: 0; border-right: 1px solid rgba(19,21,16,.25); background: transparent; font: 16px var(--font-geist-mono), monospace; }
 .zoom-controls button:last-child { border-right: 0; }
 .zoom-controls .zoom-readout { min-width: 62px; font-size: 9px; letter-spacing: .08em; }
