@@ -24,6 +24,19 @@ type Note = {
   createdAt: string;
   factCheck?: FactCheck;
 };
+type AgentAction = {
+  id: string;
+  type: 'import_recent_news';
+  status: 'queued';
+  createdAt: string;
+};
+type AgentLogLevel = 'info' | 'success' | 'warning' | 'error';
+type AgentLog = {
+  id: string;
+  timestamp: string;
+  level: AgentLogLevel;
+  message: string;
+};
 
 type ModelContext = {
   registerTool: (
@@ -44,6 +57,7 @@ declare global {
 const COLORS: NoteColor[] = ['yellow', 'pink', 'blue', 'green', 'orange'];
 const CATEGORIES: Category[] = ['TECH', 'WORLD', 'CULTURE', 'SCIENCE'];
 const FACT_CHECK_STATUSES: FactCheckStatus[] = ['unverified', 'queued', 'verified', 'disputed', 'inconclusive'];
+const AGENT_LOG_LEVELS: AgentLogLevel[] = ['info', 'success', 'warning', 'error'];
 const BOARD_WIDTH = 1600;
 const LAYOUT = [[6, 9], [38, 5], [68, 14], [16, 52], [53, 54], [72, 58], [6, 68]];
 const ROTATIONS = [-3, 2, 4, 3, -2, 1, -4];
@@ -152,15 +166,21 @@ export default function Home() {
   const [mcpStatus, setMcpStatus] = useState<'preview' | 'ready'>('preview');
   const [zoom, setZoom] = useState(1);
   const [storageReady, setStorageReady] = useState(false);
+  const [agentActions, setAgentActions] = useState<AgentAction[]>([]);
+  const [agentLogs, setAgentLogs] = useState<AgentLog[]>([]);
+  const [logPanelOpen, setLogPanelOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(true);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const paneRef = useRef<HTMLElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const notesRef = useRef<Note[]>(INITIAL_NOTES);
+  const actionsRef = useRef<AgentAction[]>([]);
+  const logsRef = useRef<AgentLog[]>([]);
   const zoomRef = useRef(1);
   const pointerRef = useRef<[number, number]>([0.5, 0.5]);
   const storageReadyRef = useRef(false);
   const centeredRef = useRef(false);
-  const draggingRef = useRef<{ id: string; offsetX: number; offsetY: number; lastX: number } | null>(null);
+  const draggingRef = useRef<{ id: string; offsetX: number; offsetY: number; lastX: number; startX: number; startY: number; moved: boolean } | null>(null);
   const panningRef = useRef<{ pointerId: number; startX: number; startY: number; scrollLeft: number; scrollTop: number } | null>(null);
   const dropTimerRef = useRef<number | null>(null);
   const shredTimersRef = useRef<Map<string, number>>(new Map());
@@ -178,6 +198,35 @@ export default function Home() {
       return next;
     });
   }, []);
+
+  const commitActions = useCallback((producer: AgentAction[] | ((current: AgentAction[]) => AgentAction[])) => {
+    setAgentActions((current) => {
+      const next = typeof producer === 'function' ? producer(current) : producer;
+      actionsRef.current = next;
+      return next;
+    });
+  }, []);
+
+  const commitLogs = useCallback((producer: AgentLog[] | ((current: AgentLog[]) => AgentLog[])) => {
+    setAgentLogs((current) => {
+      const next = typeof producer === 'function' ? producer(current) : producer;
+      logsRef.current = next;
+      return next;
+    });
+  }, []);
+
+  const appendLog = useCallback((message: string, level: AgentLogLevel = 'info') => {
+    const cleanMessage = message.trim().slice(0, 500);
+    if (!cleanMessage) return null;
+    const entry: AgentLog = {
+      id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      timestamp: new Date().toISOString(),
+      level,
+      message: cleanMessage,
+    };
+    commitLogs((current) => [...current, entry].slice(-100));
+    return entry;
+  }, [commitLogs]);
 
   const setBoardZoom = useCallback((value: number) => {
     const next = Math.round(clamp(value, 0.55, 1.45) * 20) / 20;
@@ -199,10 +248,20 @@ export default function Home() {
     const timer = window.setTimeout(() => {
       try {
         const stored = window.localStorage.getItem('daily-wall-notes');
+        const storedActions = window.localStorage.getItem('daily-wall-agent-actions');
+        const storedLogs = window.localStorage.getItem('daily-wall-agent-logs');
         storageReadyRef.current = true;
         if (stored) {
           const parsed = JSON.parse(stored) as Note[];
           if (Array.isArray(parsed)) commitNotes(parsed.slice(0, 24));
+        }
+        if (storedActions) {
+          const parsed = JSON.parse(storedActions) as AgentAction[];
+          if (Array.isArray(parsed)) commitActions(parsed.filter((action) => action?.type === 'import_recent_news' && action?.status === 'queued').slice(-20));
+        }
+        if (storedLogs) {
+          const parsed = JSON.parse(storedLogs) as AgentLog[];
+          if (Array.isArray(parsed)) commitLogs(parsed.slice(-100));
         }
       } catch {
         storageReadyRef.current = true;
@@ -211,12 +270,22 @@ export default function Home() {
       }
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [commitNotes]);
+  }, [commitActions, commitLogs, commitNotes]);
 
   useEffect(() => {
     notesRef.current = notes;
     if (storageReadyRef.current) window.localStorage.setItem('daily-wall-notes', JSON.stringify(notes));
   }, [notes]);
+
+  useEffect(() => {
+    actionsRef.current = agentActions;
+    if (storageReadyRef.current) window.localStorage.setItem('daily-wall-agent-actions', JSON.stringify(agentActions));
+  }, [agentActions]);
+
+  useEffect(() => {
+    logsRef.current = agentLogs;
+    if (storageReadyRef.current) window.localStorage.setItem('daily-wall-agent-logs', JSON.stringify(agentLogs));
+  }, [agentLogs]);
 
   useEffect(() => () => {
     if (dropTimerRef.current !== null) window.clearTimeout(dropTimerRef.current);
@@ -294,6 +363,7 @@ export default function Home() {
           const organized = organizeWall([...current, next].slice(-24));
           const created = organized.find((note) => note.id === next.id) ?? next;
           commitNotes(organized);
+          appendLog(`Pinned “${next.title}” to the news wall.`, 'success');
           setLastEvent(`Agent pinned “${next.title}”`);
           return { success: true, note: created, wallOrganized: true };
         },
@@ -441,8 +511,59 @@ export default function Home() {
             checkedAt: new Date().toISOString(),
           };
           commitNotes(current.map((note) => note.id === noteId ? { ...note, factCheck } : note));
+          appendLog(`Fact-check completed for “${target.title}”: ${String(verdict)}.`, 'success');
           setLastEvent(`Agent fact-checked “${target.title}”`);
           return { success: true, id: noteId, factCheck };
+        },
+      }, options);
+      await context!.registerTool({
+        name: 'get_agent_action_queue',
+        description: 'Read queued website actions. For import_recent_news: research the 5 most relevant news stories published in the previous 24 hours, append progress with append_agent_log, add exactly 5 sourced stickies with add_news_note, then call complete_agent_action with this action id.',
+        inputSchema: { type: 'object', properties: {} },
+        execute: () => ({
+          success: true,
+          count: actionsRef.current.length,
+          actions: actionsRef.current,
+          instructions: 'For import_recent_news, use current external research. Include a source URL in each sticky story. Add exactly five notes, log progress, and complete the action only after all five are pinned.',
+        }),
+      }, options);
+      await context!.registerTool({
+        name: 'append_agent_log',
+        description: 'Append a short activity update to the website agent log so the user can follow research, imports, fact checks, and errors.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            message: { type: 'string', description: 'Concise human-readable progress update.' },
+            level: { type: 'string', enum: AGENT_LOG_LEVELS, description: 'Severity of this update.' },
+          },
+          required: ['message'],
+        },
+        execute: ({ message, level }) => {
+          const safeLevel = AGENT_LOG_LEVELS.includes(level as AgentLogLevel) ? level as AgentLogLevel : 'info';
+          const entry = appendLog(String(message ?? ''), safeLevel);
+          return entry ? { success: true, log: entry } : { success: false, error: 'A log message is required.' };
+        },
+      }, options);
+      await context!.registerTool({
+        name: 'complete_agent_action',
+        description: 'Mark one queued website action complete after all requested work has finished. This removes its queue block and records the supplied summary in the agent log.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', description: 'Queued action id from get_agent_action_queue.' },
+            summary: { type: 'string', description: 'Short description of the completed work.' },
+          },
+          required: ['id', 'summary'],
+        },
+        execute: ({ id, summary }) => {
+          const actionId = String(id);
+          const action = actionsRef.current.find((item) => item.id === actionId);
+          if (!action) return { success: false, error: 'Queued action not found.' };
+          commitActions((current) => current.filter((item) => item.id !== actionId));
+          const cleanSummary = String(summary ?? '').trim() || 'Agent action completed.';
+          appendLog(cleanSummary, 'success');
+          setLastEvent(cleanSummary);
+          return { success: true, completed: action };
         },
       }, options);
       await context!.registerTool({
@@ -460,12 +581,15 @@ export default function Home() {
 
     registerTools().catch((error) => { console.error('WebMCP registration failed', error); setMcpStatus('preview') });
     return () => controller.abort();
-  }, [centerBoardView, commitNotes, setBoardZoom]);
+  }, [appendLog, centerBoardView, commitActions, commitNotes, setBoardZoom]);
 
   const visibleNotes = useMemo(() => activeFilter === 'ALL' ? notes : notes.filter((note) => note.category === activeFilter), [activeFilter, notes]);
   const counts = useMemo(() => Object.fromEntries(['ALL', ...CATEGORIES].map((item) => [item, item === 'ALL' ? notes.length : notes.filter((note) => note.category === item).length])), [notes]);
   const boardHeight = useMemo(() => getBoardHeight(notes.length), [notes.length]);
-  const queuedFactChecks = useMemo(() => notes.filter((note) => factStatus(note) === 'queued').length, [notes]);
+  const queuedNotes = useMemo(() => notes.filter((note) => factStatus(note) === 'queued'), [notes]);
+  const queuedFactChecks = queuedNotes.length;
+  const importQueued = agentActions.some((action) => action.type === 'import_recent_news');
+  const totalQueuedActions = queuedFactChecks + agentActions.length;
 
   useLayoutEffect(() => {
     const pane = paneRef.current;
@@ -514,6 +638,34 @@ export default function Home() {
 
   const resetComposer = () => { setHeadline(''); setStory(''); setCategory('WORLD'); setColor('yellow'); setEditingId(null) };
 
+  const focusNote = (note: Note) => {
+    setActiveFilter('ALL');
+    window.requestAnimationFrame(() => {
+      const pane = paneRef.current;
+      if (!pane) return;
+      const currentZoom = zoomRef.current;
+      pane.scrollLeft = Math.max(0, note.x / 100 * BOARD_WIDTH * currentZoom - pane.clientWidth / 2 + 122 * currentZoom);
+      pane.scrollTop = Math.max(0, note.y / 100 * getBoardHeight(notesRef.current.length) * currentZoom - pane.clientHeight / 2 + 103 * currentZoom);
+    });
+    setLastEvent(`Focused “${note.title}”`);
+  };
+
+  const queueRecentNewsImport = () => {
+    if (actionsRef.current.some((action) => action.type === 'import_recent_news')) {
+      setLastEvent('Recent-news import is already waiting for an agent');
+      return;
+    }
+    const action: AgentAction = {
+      id: `import-${Date.now()}`,
+      type: 'import_recent_news',
+      status: 'queued',
+      createdAt: new Date().toISOString(),
+    };
+    commitActions((current) => [...current, action].slice(-20));
+    appendLog('Recent-news import queued. Waiting for a connected agent.', 'info');
+    setLastEvent('Recent-news import queued for a connected agent');
+  };
+
   const submitNote = (event: FormEvent) => {
     event.preventDefault();
     const cleanHeadline = headline.trim();
@@ -536,10 +688,22 @@ export default function Home() {
     setLastEvent(`Editing “${note.title}”`);
   };
 
+  const enqueueFactCheck = (note: Note) => {
+    if (factStatus(note) === 'queued') return false;
+    commitNotes((current) => current.map((item) => item.id === note.id ? { ...item, factCheck: { status: 'queued' } } : item));
+    appendLog(`Queued “${note.title}” for fact checking.`, 'info');
+    setLastEvent(`Queued “${note.title}” — ask a connected agent to process the queue`);
+    return true;
+  };
+
   const queueFactCheck = (note: Note) => {
-    const cancelling = factStatus(note) === 'queued';
-    commitNotes((current) => current.map((item) => item.id === note.id ? { ...item, factCheck: { status: cancelling ? 'unverified' : 'queued' } } : item));
-    setLastEvent(cancelling ? `Cancelled fact-check for “${note.title}”` : `Queued “${note.title}” — ask a connected agent to process the queue`);
+    if (factStatus(note) !== 'queued') {
+      enqueueFactCheck(note);
+      return;
+    }
+    commitNotes((current) => current.map((item) => item.id === note.id ? { ...item, factCheck: { status: 'unverified' } } : item));
+    appendLog(`Removed “${note.title}” from the fact-check queue.`, 'warning');
+    setLastEvent(`Cancelled fact-check for “${note.title}”`);
   };
 
   const shredNote = (note: Note) => {
@@ -566,7 +730,7 @@ export default function Home() {
     setDraggingId(note.id);
     setDragTilt(0);
     setDropTilt(0);
-    draggingRef.current = { id: note.id, offsetX: event.clientX - (rect.left + rect.width * note.x / 100), offsetY: event.clientY - (rect.top + rect.height * note.y / 100), lastX: event.clientX };
+    draggingRef.current = { id: note.id, offsetX: event.clientX - (rect.left + rect.width * note.x / 100), offsetY: event.clientY - (rect.top + rect.height * note.y / 100), lastX: event.clientX, startX: event.clientX, startY: event.clientY, moved: false };
     event.currentTarget.setPointerCapture(event.pointerId);
   };
 
@@ -574,6 +738,8 @@ export default function Home() {
     const dragging = draggingRef.current;
     const stage = stageRef.current;
     if (!dragging || !stage) return;
+    if (!dragging.moved && Math.hypot(event.clientX - dragging.startX, event.clientY - dragging.startY) < 5) return;
+    dragging.moved = true;
     const rect = stage.getBoundingClientRect();
     const x = clamp(((event.clientX - rect.left - dragging.offsetX) / rect.width) * 100, 0, 82);
     const y = clamp(((event.clientY - rect.top - dragging.offsetY) / rect.height) * 100, 0, 78);
@@ -587,6 +753,12 @@ export default function Home() {
     if (!dropped) return;
     draggingRef.current = null;
     setDraggingId(null);
+    if (!dropped.moved) {
+      setDragTilt(0);
+      const note = notesRef.current.find((item) => item.id === dropped.id);
+      if (note) enqueueFactCheck(note);
+      return;
+    }
     setDropTilt(dragTilt);
     setDragTilt(0);
     setDroppingId(dropped.id);
@@ -602,10 +774,13 @@ export default function Home() {
       <header className="newsroom-header">
         <a href="#wall" className="news-brand"><span className="brand-pin" />THE DAILY WALL</a>
         <p>NEWS, PINNED IN PUBLIC</p>
-        <div className="header-status"><span /> VGPU {gpuStatus === 'ready' ? 'LIVE' : gpuStatus.toUpperCase()} / WEBMCP {mcpStatus === 'ready' ? 'READY' : 'PREVIEW'}</div>
+        <div className="header-actions">
+          <div className="header-status"><span /> VGPU {gpuStatus === 'ready' ? 'LIVE' : gpuStatus.toUpperCase()} / WEBMCP {mcpStatus === 'ready' ? 'READY' : 'PREVIEW'}</div>
+          <button type="button" className="drawer-toggle" onClick={() => setDrawerOpen((current) => !current)} aria-expanded={drawerOpen} aria-controls="news-drawer">{drawerOpen ? 'CLOSE DRAWER' : 'OPEN DRAWER'}</button>
+        </div>
       </header>
 
-      <section className="news-layout">
+      <section className={`news-layout${drawerOpen ? '' : ' drawer-closed'}`}>
         <header className="rail">
           <div><span className="section-code">01 / WALL</span><h1>What’s sticking <em>today?</em></h1></div>
           <p>A living wall for headlines, fragments and stories worth keeping in sight.</p>
@@ -651,8 +826,20 @@ export default function Home() {
           </div>
         </section>
 
-        <aside className="composer">
-          <div><span className="section-code">02 / {editingId ? 'EDIT NOTE' : 'ADD NOTE'}</span><h2>Write it.<br />Paste it.<br /><em>Pin it.</em></h2></div>
+        <aside className="composer" id="news-drawer">
+          <section className="queue-panel" aria-label="Agent queue">
+            <div className="queue-panel-head"><span className="section-code">02 / AGENT QUEUE</span><b>{String(totalQueuedActions).padStart(2, '0')}</b></div>
+            <div className="queue-blocks" aria-live="polite">
+              {queuedNotes.map((note) => <button type="button" key={note.id} className={`queue-block ${note.color}`} onClick={() => focusNote(note)} title={`Fact-check queued: ${note.title}`} aria-label={`Open queued note ${note.title}`}><span>?</span></button>)}
+              {agentActions.map((action) => <button type="button" key={action.id} className="queue-block import" onClick={() => setLogPanelOpen(true)} title="Recent-news import queued" aria-label="Open agent log for recent-news import"><span>↓</span></button>)}
+              {totalQueuedActions === 0 && <span className="queue-empty">QUEUE CLEAR</span>}
+            </div>
+            <div className="queue-actions">
+              <button type="button" onClick={queueRecentNewsImport} disabled={importQueued}>{importQueued ? 'IMPORT QUEUED' : 'IMPORT RECENT NEWS'}</button>
+              <button type="button" onClick={() => setLogPanelOpen(true)}>AGENT LOG <b>{String(agentLogs.length).padStart(2, '0')}</b></button>
+            </div>
+          </section>
+          <span className="section-code form-code">03 / {editingId ? 'EDIT NOTE' : 'ADD NOTE'}</span>
           <form onSubmit={submitNote}>
             <label>HEADLINE<input value={headline} onChange={(event) => setHeadline(event.target.value)} maxLength={90} placeholder="What happened?" /></label>
             <label>STORY<textarea value={story} onChange={(event) => setStory(event.target.value)} maxLength={420} placeholder="Write or paste the news here…" /></label>
@@ -662,11 +849,18 @@ export default function Home() {
             {editingId && <button type="button" className="cancel-button" onClick={resetComposer}>CANCEL EDIT</button>}
           </form>
           <div className="fact-check-help">
-            <span className="section-code">03 / FACT CHECKS · {String(queuedFactChecks).padStart(2, '0')} WAITING</span>
-            <p>The <b>?</b> button adds or removes a note from the WebMCP queue. A connected agent must research queued notes and write its verdict back; this page cannot wake an agent on its own.</p>
+            <span className="section-code">04 / FACT CHECKS · {String(queuedFactChecks).padStart(2, '0')} WAITING</span>
+            <p>Click a Post-it to queue it. A connected agent can research the claim and write its verdict back; its colored queue block disappears when verification is complete.</p>
           </div>
-          <p className="agent-note"><span /> {lastEvent} · 12 AGENT TOOLS EXPOSED</p>
+          <p className="agent-note"><span /> {lastEvent} · 15 AGENT TOOLS EXPOSED</p>
         </aside>
+      </section>
+      <section className={`agent-log-panel${logPanelOpen ? ' open' : ''}`} role="dialog" aria-label="Agent activity log" aria-hidden={!logPanelOpen}>
+        <header><div><span className="section-code">AGENT ACTIVITY</span><b>{String(agentLogs.length).padStart(2, '0')} ENTRIES</b></div><button type="button" onClick={() => setLogPanelOpen(false)} aria-label="Close agent log">CLOSE ×</button></header>
+        <div className="log-entries">
+          {agentLogs.length === 0 && <p className="log-empty">No agent activity yet. Queue a fact check or import to begin.</p>}
+          {[...agentLogs].reverse().map((entry) => <article key={entry.id} className={`log-entry ${entry.level}`}><time>{entry.timestamp.slice(11, 16)} UTC</time><span>{entry.level}</span><p>{entry.message}</p></article>)}
+        </div>
       </section>
     </main>
   );
