@@ -44,6 +44,7 @@ declare global {
 const COLORS: NoteColor[] = ['yellow', 'pink', 'blue', 'green', 'orange'];
 const CATEGORIES: Category[] = ['TECH', 'WORLD', 'CULTURE', 'SCIENCE'];
 const FACT_CHECK_STATUSES: FactCheckStatus[] = ['unverified', 'queued', 'verified', 'disputed', 'inconclusive'];
+const BOARD_WIDTH = 1600;
 const LAYOUT = [[6, 9], [38, 5], [68, 14], [16, 52], [53, 54], [72, 58], [6, 68]];
 const ROTATIONS = [-3, 2, 4, 3, -2, 1, -4];
 
@@ -84,7 +85,7 @@ fn hash(p: vec2f) -> f32 {
 `;
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
-const getBoardHeight = (count: number) => Math.max(900, Math.ceil(Math.max(count, 1) / 3) * 320 + 100);
+const getBoardHeight = (count: number) => Math.max(1200, Math.ceil(Math.max(count, 1) / 3) * 320 + 100);
 
 function organizeWall(current: Note[]): Note[] {
   const boardHeight = getBoardHeight(current.length);
@@ -127,17 +128,20 @@ export default function Home() {
   const [mcpStatus, setMcpStatus] = useState<'preview' | 'ready'>('preview');
   const [zoom, setZoom] = useState(1);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const paneRef = useRef<HTMLElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const notesRef = useRef<Note[]>(INITIAL_NOTES);
   const zoomRef = useRef(1);
   const pointerRef = useRef<[number, number]>([0.5, 0.5]);
   const storageReadyRef = useRef(false);
   const draggingRef = useRef<{ id: string; offsetX: number; offsetY: number; lastX: number } | null>(null);
+  const panningRef = useRef<{ pointerId: number; startX: number; startY: number; scrollLeft: number; scrollTop: number } | null>(null);
   const dropTimerRef = useRef<number | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [droppingId, setDroppingId] = useState<string | null>(null);
   const [dragTilt, setDragTilt] = useState(0);
   const [dropTilt, setDropTilt] = useState(0);
+  const [isPanning, setIsPanning] = useState(false);
 
   const commitNotes = useCallback((producer: Note[] | ((current: Note[]) => Note[])) => {
     setNotes((current) => {
@@ -190,7 +194,7 @@ export default function Home() {
         const { effect, frameLoop, init, surface } = await import('vgpu');
         if (!active || !canvas) return;
         const gpu = await init();
-        const target = surface(gpu, canvas, { dpr: [1, 2] });
+        const target = surface(gpu, canvas, { dpr: [1, 1.25] });
         const board = effect(gpu, BOARD_SHADER, {
           set: { params: { motion: [0, 0, 0, 0], pointer: [0.5, 0.5, 1, 1], board: [5, 0, 0, 0] } },
         });
@@ -425,6 +429,39 @@ export default function Home() {
     setBoardZoom(zoomRef.current + (event.deltaY < 0 ? 0.1 : -0.1));
   };
 
+  const beginPan = (event: ReactPointerEvent<HTMLElement>) => {
+    if (event.button !== 0 || (event.target as HTMLElement).closest('.postit, .zoom-controls')) return;
+    const pane = paneRef.current;
+    if (!pane) return;
+    event.preventDefault();
+    panningRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      scrollLeft: pane.scrollLeft,
+      scrollTop: pane.scrollTop,
+    };
+    setIsPanning(true);
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const panBoard = (event: ReactPointerEvent<HTMLElement>) => {
+    const panning = panningRef.current;
+    const pane = paneRef.current;
+    if (!panning || !pane || panning.pointerId !== event.pointerId) return;
+    pane.scrollLeft = panning.scrollLeft - (event.clientX - panning.startX);
+    pane.scrollTop = panning.scrollTop - (event.clientY - panning.startY);
+    const board = stageRef.current?.getBoundingClientRect();
+    if (board) pointerRef.current = [(event.clientX - board.left) / board.width, (event.clientY - board.top) / board.height];
+  };
+
+  const endPan = (event: ReactPointerEvent<HTMLElement>) => {
+    if (panningRef.current?.pointerId !== event.pointerId) return;
+    panningRef.current = null;
+    setIsPanning(false);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+  };
+
   const resetComposer = () => { setHeadline(''); setStory(''); setCategory('WORLD'); setColor('yellow'); setEditingId(null) };
 
   const submitNote = (event: FormEvent) => {
@@ -514,31 +551,34 @@ export default function Home() {
           </nav>
         </aside>
 
-        <section className="postit-stage" id="wall" aria-label="News Post-it wall" onWheel={zoomBoard}
+        <section ref={paneRef} className={`postit-stage${isPanning ? ' is-panning' : ''}`} id="wall" aria-label="News Post-it wall" onWheel={zoomBoard}
+          onPointerDown={beginPan} onPointerMove={panBoard} onPointerUp={endPan} onPointerCancel={endPan}
           onPointerLeave={() => { pointerRef.current = [0.5, 0.5] }}>
           <div className="zoom-controls" aria-label="Board zoom controls">
             <button type="button" onClick={() => setBoardZoom(zoomRef.current - 0.1)} aria-label="Zoom out">−</button>
             <button type="button" className="zoom-readout" onClick={() => setBoardZoom(1)} aria-label="Reset board zoom">{Math.round(zoom * 100)}%</button>
             <button type="button" onClick={() => setBoardZoom(zoomRef.current + 0.1)} aria-label="Zoom in">+</button>
           </div>
-          <div ref={stageRef} className="board-world" style={{ width: `${100 / zoom}%`, minHeight: `${boardHeight / zoom}px`, transform: `scale(${zoom})` }}
-            onPointerMove={(event) => {
-              const rect = event.currentTarget.getBoundingClientRect();
-              pointerRef.current = [(event.clientX - rect.left) / rect.width, (event.clientY - rect.top) / rect.height];
-            }}>
-            <canvas ref={canvasRef} aria-hidden="true" />
-            <div className="stage-label"><span>LIVE WALL / 28 AUG 2026</span><span>{visibleNotes.length} NOTES / DRAG TO ARRANGE</span></div>
-            {visibleNotes.length === 0 && <div className="empty-wall"><span>THE WALL IS QUIET</span><p>Write or paste the first story.</p></div>}
-            {visibleNotes.map((note) => (
-              <article key={note.id} className={`postit ${note.color}${draggingId === note.id ? ' is-dragging' : ''}${droppingId === note.id ? ' is-dropping' : ''}`} style={{ left: `${note.x}%`, top: `${note.y}%`, rotate: `${note.rotation}deg`, '--drag-tilt': `${droppingId === note.id ? dropTilt : dragTilt}deg` } as CSSProperties}
-                onPointerDown={(event) => beginDrag(event, note)} onPointerMove={dragNote} onPointerUp={endDrag} onPointerCancel={endDrag}>
-                <span className="tape" />
-                <div className="note-meta"><span>{note.category}</span><span className={`fact-badge ${factStatus(note)}`} title={note.factCheck?.summary}>{factStatus(note).toUpperCase()}</span></div>
-                <h2>{note.title}</h2><p>{note.body}</p>
-                {note.factCheck?.summary && <p className="fact-summary"><b>{factStatus(note)}:</b> {note.factCheck.summary}</p>}
-                <footer><span>JUST NOW</span><div><button onPointerDown={(event) => event.stopPropagation()} onClick={() => queueFactCheck(note)} aria-label={`Queue ${note.title} for a fact check`}>?</button><button onPointerDown={(event) => event.stopPropagation()} onClick={() => editNote(note)} aria-label={`Edit ${note.title}`}>✎</button><button onPointerDown={(event) => event.stopPropagation()} onClick={() => { commitNotes((current) => current.filter((item) => item.id !== note.id)); setLastEvent(`Removed “${note.title}”`) }} aria-label={`Remove ${note.title}`}>×</button></div></footer>
-              </article>
-            ))}
+          <div className="board-scroll-space" style={{ width: `${BOARD_WIDTH * zoom}px`, height: `${boardHeight * zoom}px` }}>
+            <div ref={stageRef} className="board-world" style={{ width: `${BOARD_WIDTH}px`, height: `${boardHeight}px`, transform: `scale(${zoom})` }}
+              onPointerMove={(event) => {
+                const rect = event.currentTarget.getBoundingClientRect();
+                pointerRef.current = [(event.clientX - rect.left) / rect.width, (event.clientY - rect.top) / rect.height];
+              }}>
+              <canvas ref={canvasRef} aria-hidden="true" />
+              <div className="stage-label"><span>LIVE WALL / 28 AUG 2026</span><span>{visibleNotes.length} NOTES / DRAG EMPTY BOARD TO PAN</span></div>
+              {visibleNotes.length === 0 && <div className="empty-wall"><span>THE WALL IS QUIET</span><p>Write or paste the first story.</p></div>}
+              {visibleNotes.map((note) => (
+                <article key={note.id} className={`postit ${note.color}${draggingId === note.id ? ' is-dragging' : ''}${droppingId === note.id ? ' is-dropping' : ''}`} style={{ left: `${note.x}%`, top: `${note.y}%`, rotate: `${note.rotation}deg`, '--drag-tilt': `${droppingId === note.id ? dropTilt : dragTilt}deg` } as CSSProperties}
+                  onPointerDown={(event) => beginDrag(event, note)} onPointerMove={dragNote} onPointerUp={endDrag} onPointerCancel={endDrag}>
+                  <span className="tape" />
+                  <div className="note-meta"><span>{note.category}</span><span className={`fact-badge ${factStatus(note)}`} title={note.factCheck?.summary}>{factStatus(note).toUpperCase()}</span></div>
+                  <h2>{note.title}</h2><p>{note.body}</p>
+                  {note.factCheck?.summary && <p className="fact-summary"><b>{factStatus(note)}:</b> {note.factCheck.summary}</p>}
+                  <footer><span>JUST NOW</span><div><button onPointerDown={(event) => event.stopPropagation()} onClick={() => queueFactCheck(note)} aria-label={`Queue ${note.title} for a fact check`}>?</button><button onPointerDown={(event) => event.stopPropagation()} onClick={() => editNote(note)} aria-label={`Edit ${note.title}`}>✎</button><button onPointerDown={(event) => event.stopPropagation()} onClick={() => { commitNotes((current) => current.filter((item) => item.id !== note.id)); setLastEvent(`Removed “${note.title}”`) }} aria-label={`Remove ${note.title}`}>×</button></div></footer>
+                </article>
+              ))}
+            </div>
           </div>
         </section>
 

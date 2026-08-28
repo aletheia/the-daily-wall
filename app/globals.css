@@ -27,9 +27,11 @@ button { cursor: pointer; }
 .rail nav button.active::before { content: '→'; margin-right: 8px; }
 .rail nav button b { margin-left: auto; color: #85867e; }
 
-.postit-stage { height: 720px; position: relative; overflow: auto; overscroll-behavior: contain; background: var(--board); }
-.board-world { position: relative; min-width: 100%; background: var(--board); transform-origin: 0 0; }
-.board-world canvas { position: absolute; inset: 0; width: 100%; height: 100%; opacity: .75; background: radial-gradient(circle at 50% 30%, #284c43, #112b26 70%); }
+.postit-stage { height: 720px; position: relative; overflow: auto; overscroll-behavior: contain; touch-action: none; cursor: grab; background: radial-gradient(circle at 32% 24%, rgba(47,91,78,.72), transparent 50%), repeating-linear-gradient(87deg, rgba(255,255,255,.018) 0 1px, transparent 1px 4px), repeating-linear-gradient(2deg, rgba(0,0,0,.025) 0 1px, transparent 1px 5px), var(--board); }
+.postit-stage.is-panning { cursor: grabbing; }
+.board-scroll-space { position: relative; }
+.board-world { position: absolute; inset: 0 auto auto 0; background: radial-gradient(circle at 32% 24%, #284c43, #112b26 70%), repeating-linear-gradient(87deg, rgba(255,255,255,.018) 0 1px, transparent 1px 4px), var(--board); transform-origin: 0 0; }
+.board-world canvas { position: absolute; inset: 0; width: 100%; height: 100%; opacity: .68; background: radial-gradient(circle at 50% 30%, #284c43, #112b26 70%); }
 .board-world::after { content: ''; position: absolute; inset: 0; pointer-events: none; background: repeating-linear-gradient(0deg, rgba(255,255,255,.015) 0 1px, transparent 1px 5px); mix-blend-mode: screen; }
 .zoom-controls { position: sticky; z-index: 60; top: 14px; left: 100%; width: max-content; margin: 14px 14px -50px auto; display: flex; background: rgba(242,239,230,.94); border: 1px solid rgba(19,21,16,.45); box-shadow: 0 8px 24px rgba(0,0,0,.2); }
 .zoom-controls button { min-width: 36px; height: 36px; border: 0; border-right: 1px solid rgba(19,21,16,.25); background: transparent; font: 16px var(--font-geist-mono), monospace; }
