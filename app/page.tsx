@@ -710,6 +710,12 @@ export default function Home() {
     setLastEvent('Recent-news import queued for a connected agent');
   };
 
+  const cancelAgentAction = (action: AgentAction) => {
+    commitActions((current) => current.filter((item) => item.id !== action.id));
+    appendLog('Recent-news import removed from the agent queue.', 'warning');
+    setLastEvent('Cancelled recent-news import');
+  };
+
   const submitNote = (event: FormEvent) => {
     event.preventDefault();
     const cleanHeadline = headline.trim();
@@ -878,8 +884,8 @@ export default function Home() {
             <div className="queue-panel-head"><span className="section-code">02 / AGENT QUEUE</span><b>{String(totalQueuedActions).padStart(2, '0')}</b></div>
             <p className="queue-description">Click a Post-it to queue a fact check. A connected agent researches the claim and writes the verdict back; its colored block disappears when the verification is complete.</p>
             <div className="queue-blocks" aria-live="polite">
-              {queuedNotes.map((note) => <button type="button" key={note.id} className={`queue-block ${note.color}`} onClick={() => focusNote(note)} title={`Fact-check queued: ${note.title}`} aria-label={`Open queued note ${note.title}`}><span>?</span></button>)}
-              {agentActions.map((action) => <button type="button" key={action.id} className="queue-block import" onClick={() => setLogPanelOpen(true)} title="Recent-news import queued" aria-label="Open agent log for recent-news import"><span>↓</span></button>)}
+              {queuedNotes.map((note) => <div className="queue-block-wrap" key={note.id}><button type="button" className={`queue-block ${note.color}`} onClick={() => focusNote(note)} title={`Fact-check queued: ${note.title}`} aria-label={`Open queued note ${note.title}`}><span>?</span></button><button type="button" className="queue-remove" onClick={() => queueFactCheck(note)} title="Remove from queue" aria-label={`Remove ${note.title} from the fact-check queue`}>×</button></div>)}
+              {agentActions.map((action) => <div className="queue-block-wrap" key={action.id}><button type="button" className="queue-block import" onClick={() => setLogPanelOpen(true)} title="Recent-news import queued" aria-label="Open agent log for recent-news import"><span>↓</span></button><button type="button" className="queue-remove" onClick={() => cancelAgentAction(action)} title="Remove from queue" aria-label="Remove recent-news import from the agent queue">×</button></div>)}
               {totalQueuedActions === 0 && <span className="queue-empty">QUEUE CLEAR</span>}
             </div>
           </section>
