@@ -61,7 +61,9 @@ const CATEGORIES: Category[] = ['TECH', 'WORLD', 'CULTURE', 'SCIENCE'];
 const FACT_CHECK_STATUSES: FactCheckStatus[] = ['unverified', 'queued', 'verified', 'disputed', 'inconclusive'];
 const AGENT_LOG_LEVELS: AgentLogLevel[] = ['info', 'success', 'warning', 'error'];
 const AGENT_ACTORS: AgentActor[] = ['human', 'agent', 'system'];
-const BOARD_WIDTH = 1600;
+const BASE_BOARD_WIDTH = 1600;
+const NOTE_WIDTH = 245;
+const LAYOUT_HORIZONTAL_GAP = 44;
 const LAYOUT = [[6, 9], [38, 5], [68, 14], [16, 52], [53, 54], [72, 58], [6, 68]];
 const ROTATIONS = [-3, 2, 4, 3, -2, 1, -4];
 const CONFETTI_PIECES = Array.from({ length: 22 }, (_, index) => ({
@@ -137,20 +139,24 @@ struct Params { motion: vec4f }
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 const getBoardHeight = (count: number) => Math.max(1200, Math.ceil(Math.max(count, 1) / 3) * 360 + 120);
+const getBoardWidth = (count: number) => {
+  const columns = Math.ceil(Math.max(count, 1) / 2);
+  return Math.max(BASE_BOARD_WIDTH, columns * NOTE_WIDTH + Math.max(0, columns - 1) * LAYOUT_HORIZONTAL_GAP + 160);
+};
 
 type NoteSize = { width: number; height: number };
 
 function estimateNoteSize(note: Note): NoteSize {
   const titleLines = Math.max(1, Math.ceil(note.title.length / 21));
   const bodyLines = Math.max(1, Math.ceil(note.body.length / 38));
-  return { width: 245, height: Math.max(205, 114 + titleLines * 28 + bodyLines * 16) };
+  return { width: NOTE_WIDTH, height: Math.max(205, 114 + titleLines * 28 + bodyLines * 16) };
 }
 
 function organizeWall(current: Note[], renderedSizes = new Map<string, NoteSize>()): Note[] {
   if (current.length === 0) return [];
-  const columns = Math.min(5, current.length);
-  const rows = Math.ceil(current.length / columns);
-  const horizontalGap = 44;
+  const rows = Math.min(2, current.length);
+  const columns = Math.ceil(current.length / rows);
+  const boardWidth = getBoardWidth(current.length);
   const verticalGap = 48;
   const boardHeight = getBoardHeight(current.length);
   const sizes = current.map((note) => renderedSizes.get(note.id) ?? estimateNoteSize(note));
@@ -158,7 +164,7 @@ function organizeWall(current: Note[], renderedSizes = new Map<string, NoteSize>
     const first = row * columns;
     const items = sizes.slice(first, first + columns);
     return {
-      width: items.reduce((total, item) => total + item.width, 0) + Math.max(0, items.length - 1) * horizontalGap,
+      width: items.reduce((total, item) => total + item.width, 0) + Math.max(0, items.length - 1) * LAYOUT_HORIZONTAL_GAP,
       height: Math.max(...items.map((item) => item.height)),
     };
   });
@@ -168,18 +174,18 @@ function organizeWall(current: Note[], renderedSizes = new Map<string, NoteSize>
   rowMetrics.forEach((rowMetric, row) => {
     const first = row * columns;
     const itemsInRow = Math.min(columns, current.length - first);
-    let cursorX = (BOARD_WIDTH - rowMetric.width) / 2;
+    let cursorX = (boardWidth - rowMetric.width) / 2;
     for (let column = 0; column < itemsInRow; column += 1) {
       const index = first + column;
       const note = current[index];
       const size = sizes[index];
       positioned.push({
         ...note,
-        x: (cursorX / BOARD_WIDTH) * 100,
+        x: (cursorX / boardWidth) * 100,
         y: ((cursorY + (rowMetric.height - size.height) / 2) / boardHeight) * 100,
         rotation: ROTATIONS[index % ROTATIONS.length] * 0.28,
       });
-      cursorX += size.width + horizontalGap;
+      cursorX += size.width + LAYOUT_HORIZONTAL_GAP;
     }
     cursorY += rowMetric.height + verticalGap;
   });
@@ -569,12 +575,12 @@ export default function Home() {
       }, options);
       await context!.registerTool({
         name: 'organize_news_wall',
-        description: 'Arrange every Post-it into a non-overlapping grid while preserving all news content.',
+        description: 'Arrange every Post-it into two centered, non-overlapping rows while preserving all news content.',
         inputSchema: { type: 'object', properties: {} },
         execute: () => {
           const organized = organizeWall(notesRef.current, getRenderedNoteSizes());
           commitNotes(organized);
-          appendLog(`Auto-arranged ${organized.length} stickers without overlap.`, 'info', 'agent');
+          appendLog(`Auto-arranged ${organized.length} stickers in two rows without overlap.`, 'info', 'agent');
           centerBoardView();
           setLastEvent(`Agent organized ${organized.length} notes`);
           return { success: true, count: organized.length, notes: organized.map(({ id, x, y }) => ({ id, x, y })) };
@@ -691,6 +697,7 @@ export default function Home() {
 
   const visibleNotes = useMemo(() => activeFilter === 'ALL' ? notes : notes.filter((note) => note.category === activeFilter), [activeFilter, notes]);
   const counts = useMemo(() => Object.fromEntries(['ALL', ...CATEGORIES].map((item) => [item, item === 'ALL' ? notes.length : notes.filter((note) => note.category === item).length])), [notes]);
+  const boardWidth = useMemo(() => getBoardWidth(notes.length), [notes.length]);
   const boardHeight = useMemo(() => getBoardHeight(notes.length), [notes.length]);
   const queuedNotes = useMemo(() => notes.filter((note) => factStatus(note) === 'queued'), [notes]);
   const queuedFactChecks = queuedNotes.length;
@@ -701,9 +708,9 @@ export default function Home() {
     const applyLayout = () => {
       const organized = organizeWall(notesRef.current, getRenderedNoteSizes());
       commitNotes(organized);
-      appendLog(`Auto-arranged ${organized.length} stickers without overlap.`, 'info', 'human');
+      appendLog(`Auto-arranged ${organized.length} stickers in two rows without overlap.`, 'info', 'human');
       centerBoardView();
-      setLastEvent(`Auto-arranged ${organized.length} notes at the center`);
+      setLastEvent(`Auto-arranged ${organized.length} notes in two centered rows`);
     };
     if (activeFilter === 'ALL') {
       applyLayout();
@@ -766,7 +773,7 @@ export default function Home() {
       const pane = paneRef.current;
       if (!pane) return;
       const currentZoom = zoomRef.current;
-      pane.scrollLeft = Math.max(0, note.x / 100 * BOARD_WIDTH * currentZoom - pane.clientWidth / 2 + 122 * currentZoom);
+      pane.scrollLeft = Math.max(0, note.x / 100 * boardWidth * currentZoom - pane.clientWidth / 2 + 122 * currentZoom);
       pane.scrollTop = Math.max(0, note.y / 100 * getBoardHeight(notesRef.current.length) * currentZoom - pane.clientHeight / 2 + 103 * currentZoom);
     });
     setLastEvent(`Focused “${note.title}”`);
@@ -922,7 +929,7 @@ export default function Home() {
 
         <section className="board-shell" id="wall" aria-label="News Post-it wall">
           <div className="zoom-controls" aria-label="Board zoom controls">
-            <button type="button" className="auto-layout-control" onClick={autoLayoutWall} aria-label="Automatically arrange all notes at the center of the board without overlap">AUTO LAYOUT</button>
+            <button type="button" className="auto-layout-control" onClick={autoLayoutWall} aria-label="Automatically arrange all notes in two centered rows without overlap">AUTO LAYOUT</button>
             <button type="button" onClick={() => setBoardZoom(zoomRef.current - 0.1)} aria-label="Zoom out">−</button>
             <button type="button" className="zoom-readout" onClick={() => setBoardZoom(1)} aria-label="Reset board zoom">{Math.round(zoom * 100)}%</button>
             <button type="button" onClick={() => setBoardZoom(zoomRef.current + 0.1)} aria-label="Zoom in">+</button>
@@ -930,8 +937,8 @@ export default function Home() {
           <div ref={paneRef} className={`postit-stage${isPanning ? ' is-panning' : ''}`} onWheel={zoomBoard}
             onPointerDown={beginPan} onPointerMove={panBoard} onPointerUp={endPan} onPointerCancel={endPan}
             onPointerLeave={() => { pointerRef.current = [0.5, 0.5] }}>
-            <div className="board-scroll-space" style={{ width: `max(${BOARD_WIDTH * zoom}px, 100%)`, height: `max(${boardHeight * zoom}px, 100%)` }}>
-            <div ref={stageRef} className="board-world" style={{ width: `${BOARD_WIDTH}px`, height: `${boardHeight}px`, transform: `scale(${zoom})` }}
+            <div className="board-scroll-space" style={{ width: `max(${boardWidth * zoom}px, 100%)`, height: `max(${boardHeight * zoom}px, 100%)` }}>
+            <div ref={stageRef} className="board-world" style={{ width: `${boardWidth}px`, height: `${boardHeight}px`, transform: `scale(${zoom})` }}
               onPointerMove={(event) => {
                 const rect = event.currentTarget.getBoundingClientRect();
                 pointerRef.current = [(event.clientX - rect.left) / rect.width, (event.clientY - rect.top) / rect.height];
