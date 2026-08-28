@@ -963,7 +963,7 @@ export default function Home() {
             <label>HEADLINE<input value={headline} onChange={(event) => setHeadline(event.target.value)} maxLength={90} placeholder="What happened?" /></label>
             <label>STORY<textarea value={story} onChange={(event) => setStory(event.target.value)} maxLength={420} placeholder="Write or paste the news here…" /></label>
             <label>CATEGORY<select value={category} onChange={(event) => setCategory(event.target.value as Category)}>{CATEGORIES.map((item) => <option key={item}>{item}</option>)}</select></label>
-            <div className="color-row"><span>COLOR</span>{COLORS.map((item) => <button type="button" key={item} className={`swatch ${item} ${color === item ? 'active' : ''}`} onClick={() => setColor(item)} aria-label={`Use ${item} paper`} aria-pressed={color === item} title={item} />)}</div>
+            <div className="color-row"><span>COLOR</span>{COLORS.map((item) => <input type="radio" name="note-color" value={item} key={item} className={`swatch ${item}`} checked={color === item} onChange={() => setColor(item)} aria-label={`Use ${item} paper`} title={item} />)}</div>
             <button type="submit" className="pin-button"><span>{editingId ? 'UPDATE THE NOTE' : 'PIN TO THE WALL'}</span><b>↗</b></button>
             {editingId && <button type="button" className="cancel-button" onClick={resetComposer}>CANCEL EDIT</button>}
           </form>
