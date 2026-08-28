@@ -593,6 +593,7 @@ export default function Home() {
 
         <section className="board-shell" id="wall" aria-label="News Post-it wall">
           <div className="zoom-controls" aria-label="Board zoom controls">
+            <button type="button" className="auto-layout-control" onClick={() => { const organized = organizeWall(notesRef.current); commitNotes(organized); setLastEvent(`Auto-arranged ${organized.length} notes`) }} aria-label="Automatically arrange all notes">AUTO LAYOUT</button>
             <button type="button" onClick={() => setBoardZoom(zoomRef.current - 0.1)} aria-label="Zoom out">−</button>
             <button type="button" className="zoom-readout" onClick={() => setBoardZoom(1)} aria-label="Reset board zoom">{Math.round(zoom * 100)}%</button>
             <button type="button" onClick={() => setBoardZoom(zoomRef.current + 0.1)} aria-label="Zoom in">+</button>
