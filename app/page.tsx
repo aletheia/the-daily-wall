@@ -138,30 +138,52 @@ struct Params { motion: vec4f }
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 const getBoardHeight = (count: number) => Math.max(1200, Math.ceil(Math.max(count, 1) / 3) * 360 + 120);
 
-function organizeWall(current: Note[]): Note[] {
+type NoteSize = { width: number; height: number };
+
+function estimateNoteSize(note: Note): NoteSize {
+  const titleLines = Math.max(1, Math.ceil(note.title.length / 21));
+  const bodyLines = Math.max(1, Math.ceil(note.body.length / 38));
+  return { width: 245, height: Math.max(205, 114 + titleLines * 28 + bodyLines * 16) };
+}
+
+function organizeWall(current: Note[], renderedSizes = new Map<string, NoteSize>()): Note[] {
   if (current.length === 0) return [];
-  const columns = Math.min(3, current.length);
+  const columns = Math.min(5, current.length);
   const rows = Math.ceil(current.length / columns);
-  const noteWidth = 245;
-  const noteHeight = 215;
-  const horizontalGap = 70;
-  const verticalGap = 55;
+  const horizontalGap = 44;
+  const verticalGap = 48;
   const boardHeight = getBoardHeight(current.length);
-  const groupHeight = rows * noteHeight + (rows - 1) * verticalGap;
-  const startY = (boardHeight - groupHeight) / 2;
-  return current.map((note, index) => {
-    const row = Math.floor(index / columns);
-    const column = index % columns;
-    const itemsInRow = Math.min(columns, current.length - row * columns);
-    const rowWidth = itemsInRow * noteWidth + (itemsInRow - 1) * horizontalGap;
-    const startX = (BOARD_WIDTH - rowWidth) / 2;
+  const sizes = current.map((note) => renderedSizes.get(note.id) ?? estimateNoteSize(note));
+  const rowMetrics = Array.from({ length: rows }, (_, row) => {
+    const first = row * columns;
+    const items = sizes.slice(first, first + columns);
     return {
-      ...note,
-      x: ((startX + column * (noteWidth + horizontalGap)) / BOARD_WIDTH) * 100,
-      y: ((startY + row * (noteHeight + verticalGap)) / boardHeight) * 100,
-      rotation: ROTATIONS[index % ROTATIONS.length] * 0.35,
+      width: items.reduce((total, item) => total + item.width, 0) + Math.max(0, items.length - 1) * horizontalGap,
+      height: Math.max(...items.map((item) => item.height)),
     };
   });
+  const groupHeight = rowMetrics.reduce((total, row) => total + row.height, 0) + Math.max(0, rows - 1) * verticalGap;
+  let cursorY = Math.max(70, (boardHeight - groupHeight) / 2);
+  const positioned: Note[] = [];
+  rowMetrics.forEach((rowMetric, row) => {
+    const first = row * columns;
+    const itemsInRow = Math.min(columns, current.length - first);
+    let cursorX = (BOARD_WIDTH - rowMetric.width) / 2;
+    for (let column = 0; column < itemsInRow; column += 1) {
+      const index = first + column;
+      const note = current[index];
+      const size = sizes[index];
+      positioned.push({
+        ...note,
+        x: (cursorX / BOARD_WIDTH) * 100,
+        y: ((cursorY + (rowMetric.height - size.height) / 2) / boardHeight) * 100,
+        rotation: ROTATIONS[index % ROTATIONS.length] * 0.28,
+      });
+      cursorX += size.width + horizontalGap;
+    }
+    cursorY += rowMetric.height + verticalGap;
+  });
+  return positioned;
 }
 
 const factStatus = (note: Note): FactCheckStatus => note.factCheck?.status ?? 'unverified';
@@ -279,6 +301,15 @@ export default function Home() {
       pane.scrollLeft = Math.max(0, (pane.scrollWidth - pane.clientWidth) / 2);
       pane.scrollTop = Math.max(0, (pane.scrollHeight - pane.clientHeight) / 2);
     });
+  }, []);
+
+  const getRenderedNoteSizes = useCallback(() => {
+    const sizes = new Map<string, NoteSize>();
+    stageRef.current?.querySelectorAll<HTMLElement>('.postit[data-note-id]').forEach((element) => {
+      const id = element.dataset.noteId;
+      if (id) sizes.set(id, { width: element.offsetWidth, height: element.offsetHeight });
+    });
+    return sizes;
   }, []);
 
   useEffect(() => {
@@ -427,7 +458,7 @@ export default function Home() {
             category: CATEGORIES.includes(rawCategory as Category) ? rawCategory as Category : 'WORLD',
             color: COLORS.includes(rawColor as NoteColor) ? rawColor as NoteColor : undefined,
           }, current.length);
-          const organized = organizeWall([...current, next].slice(-24));
+          const organized = organizeWall([...current, next].slice(-24), getRenderedNoteSizes());
           const created = organized.find((note) => note.id === next.id) ?? next;
           commitNotes(organized);
           appendLog(`Pinned “${next.title}” to the news wall.`, 'success', 'agent');
@@ -534,7 +565,7 @@ export default function Home() {
         description: 'Arrange every Post-it into a non-overlapping grid while preserving all news content.',
         inputSchema: { type: 'object', properties: {} },
         execute: () => {
-          const organized = organizeWall(notesRef.current);
+          const organized = organizeWall(notesRef.current, getRenderedNoteSizes());
           commitNotes(organized);
           centerBoardView();
           setLastEvent(`Agent organized ${organized.length} notes`);
@@ -648,7 +679,7 @@ export default function Home() {
 
     registerTools().catch((error) => { console.error('WebMCP registration failed', error); appendLog('WebMCP tool registration failed; agent controls are unavailable.', 'error', 'system'); setMcpStatus('preview') });
     return () => controller.abort();
-  }, [appendLog, centerBoardView, commitActions, commitNotes, setBoardZoom]);
+  }, [appendLog, centerBoardView, commitActions, commitNotes, getRenderedNoteSizes, setBoardZoom]);
 
   const visibleNotes = useMemo(() => activeFilter === 'ALL' ? notes : notes.filter((note) => note.category === activeFilter), [activeFilter, notes]);
   const counts = useMemo(() => Object.fromEntries(['ALL', ...CATEGORIES].map((item) => [item, item === 'ALL' ? notes.length : notes.filter((note) => note.category === item).length])), [notes]);
@@ -657,6 +688,21 @@ export default function Home() {
   const queuedFactChecks = queuedNotes.length;
   const importQueued = agentActions.some((action) => action.type === 'import_recent_news');
   const totalQueuedActions = queuedFactChecks + agentActions.length;
+
+  const autoLayoutWall = useCallback(() => {
+    const applyLayout = () => {
+      const organized = organizeWall(notesRef.current, getRenderedNoteSizes());
+      commitNotes(organized);
+      centerBoardView();
+      setLastEvent(`Auto-arranged ${organized.length} notes at the center`);
+    };
+    if (activeFilter === 'ALL') {
+      applyLayout();
+      return;
+    }
+    setActiveFilter('ALL');
+    window.requestAnimationFrame(() => window.requestAnimationFrame(applyLayout));
+  }, [activeFilter, centerBoardView, commitNotes, getRenderedNoteSizes]);
 
   useLayoutEffect(() => {
     const pane = paneRef.current;
@@ -749,7 +795,7 @@ export default function Home() {
       setLastEvent(`Updated “${cleanHeadline}”`);
     } else {
       const next = createNote({ title: cleanHeadline, body: cleanStory, category, color }, notesRef.current.length);
-      commitNotes((current) => organizeWall([...current, next].slice(-24)));
+      commitNotes((current) => organizeWall([...current, next].slice(-24), getRenderedNoteSizes()));
       setActiveFilter('ALL');
       setLastEvent(`Pinned “${next.title}”`);
     }
@@ -865,7 +911,7 @@ export default function Home() {
 
         <section className="board-shell" id="wall" aria-label="News Post-it wall">
           <div className="zoom-controls" aria-label="Board zoom controls">
-            <button type="button" className="auto-layout-control" onClick={() => { const organized = organizeWall(notesRef.current); commitNotes(organized); centerBoardView(); setLastEvent(`Auto-arranged ${organized.length} notes at the center`) }} aria-label="Automatically arrange all notes at the center of the board">AUTO LAYOUT</button>
+            <button type="button" className="auto-layout-control" onClick={autoLayoutWall} aria-label="Automatically arrange all notes at the center of the board without overlap">AUTO LAYOUT</button>
             <button type="button" onClick={() => setBoardZoom(zoomRef.current - 0.1)} aria-label="Zoom out">−</button>
             <button type="button" className="zoom-readout" onClick={() => setBoardZoom(1)} aria-label="Reset board zoom">{Math.round(zoom * 100)}%</button>
             <button type="button" onClick={() => setBoardZoom(zoomRef.current + 0.1)} aria-label="Zoom in">+</button>
@@ -883,7 +929,7 @@ export default function Home() {
               <div className="stage-label"><span>LIVE WALL / 28 AUG 2026</span><span>{visibleNotes.length} NOTES / DRAG EMPTY BOARD TO PAN</span></div>
               {visibleNotes.length === 0 && <div className="empty-wall"><span>THE WALL IS QUIET</span><p>Write or paste the first story.</p></div>}
               {visibleNotes.map((note) => (
-                <article key={note.id} className={`postit ${note.color}${draggingId === note.id ? ' is-dragging' : ''}${droppingId === note.id ? ' is-dropping' : ''}${shreddingIds.includes(note.id) ? ' is-shredding' : ''}${expandedFactId === note.id ? ' is-expanded' : ''}`} style={{ left: `${note.x}%`, top: `${note.y}%`, rotate: `${note.rotation}deg`, '--drag-tilt': `${droppingId === note.id ? dropTilt : dragTilt}deg` } as CSSProperties}
+                <article key={note.id} data-note-id={note.id} className={`postit ${note.color}${draggingId === note.id ? ' is-dragging' : ''}${droppingId === note.id ? ' is-dropping' : ''}${shreddingIds.includes(note.id) ? ' is-shredding' : ''}${expandedFactId === note.id ? ' is-expanded' : ''}`} style={{ left: `${note.x}%`, top: `${note.y}%`, rotate: `${note.rotation}deg`, '--drag-tilt': `${droppingId === note.id ? dropTilt : dragTilt}deg` } as CSSProperties}
                   onPointerDown={(event) => beginDrag(event, note)} onPointerMove={dragNote} onPointerUp={endDrag} onPointerCancel={endDrag}>
                   <span className="tape" />
                   <div className="note-meta"><span>{note.category}</span>{note.factCheck?.summary ? <button type="button" className={`fact-badge ${factStatus(note)}`} title="Show fact-check details" aria-expanded={expandedFactId === note.id} onPointerDown={(event) => event.stopPropagation()} onClick={() => setExpandedFactId((current) => current === note.id ? null : note.id)}>{factStatus(note).toUpperCase()}</button> : <span className={`fact-badge ${factStatus(note)}`}>{factStatus(note).toUpperCase()}</span>}</div>
