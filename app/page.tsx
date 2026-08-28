@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type PointerEvent as ReactPointerEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type PointerEvent as ReactPointerEvent } from 'react';
 
 type NoteColor = 'yellow' | 'pink' | 'blue' | 'green' | 'orange';
 type Category = 'TECH' | 'WORLD' | 'CULTURE' | 'SCIENCE';
@@ -107,7 +107,12 @@ export default function Home() {
   const notesRef = useRef<Note[]>(INITIAL_NOTES);
   const pointerRef = useRef<[number, number]>([0.5, 0.5]);
   const storageReadyRef = useRef(false);
-  const draggingRef = useRef<{ id: string; offsetX: number; offsetY: number } | null>(null);
+  const draggingRef = useRef<{ id: string; offsetX: number; offsetY: number; lastX: number } | null>(null);
+  const dropTimerRef = useRef<number | null>(null);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [droppingId, setDroppingId] = useState<string | null>(null);
+  const [dragTilt, setDragTilt] = useState(0);
+  const [dropTilt, setDropTilt] = useState(0);
 
   const commitNotes = useCallback((producer: Note[] | ((current: Note[]) => Note[])) => {
     setNotes((current) => {
@@ -137,6 +142,10 @@ export default function Home() {
     notesRef.current = notes;
     if (storageReadyRef.current) window.localStorage.setItem('daily-wall-notes', JSON.stringify(notes));
   }, [notes]);
+
+  useEffect(() => () => {
+    if (dropTimerRef.current !== null) window.clearTimeout(dropTimerRef.current);
+  }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -334,7 +343,12 @@ export default function Home() {
     const stage = stageRef.current;
     if (!stage) return;
     const rect = stage.getBoundingClientRect();
-    draggingRef.current = { id: note.id, offsetX: event.clientX - (rect.left + rect.width * note.x / 100), offsetY: event.clientY - (rect.top + rect.height * note.y / 100) };
+    if (dropTimerRef.current !== null) window.clearTimeout(dropTimerRef.current);
+    setDroppingId(null);
+    setDraggingId(note.id);
+    setDragTilt(0);
+    setDropTilt(0);
+    draggingRef.current = { id: note.id, offsetX: event.clientX - (rect.left + rect.width * note.x / 100), offsetY: event.clientY - (rect.top + rect.height * note.y / 100), lastX: event.clientX };
     event.currentTarget.setPointerCapture(event.pointerId);
   };
 
@@ -345,10 +359,25 @@ export default function Home() {
     const rect = stage.getBoundingClientRect();
     const x = clamp(((event.clientX - rect.left - dragging.offsetX) / rect.width) * 100, 0, 82);
     const y = clamp(((event.clientY - rect.top - dragging.offsetY) / rect.height) * 100, 0, 78);
+    setDragTilt(clamp((event.clientX - dragging.lastX) * 0.32, -4.5, 4.5));
+    dragging.lastX = event.clientX;
     commitNotes((current) => current.map((note) => note.id === dragging.id ? { ...note, x, y } : note));
   };
 
-  const endDrag = () => { if (draggingRef.current) setLastEvent('Note moved by hand'); draggingRef.current = null };
+  const endDrag = () => {
+    const dropped = draggingRef.current;
+    if (!dropped) return;
+    draggingRef.current = null;
+    setDraggingId(null);
+    setDropTilt(dragTilt);
+    setDragTilt(0);
+    setDroppingId(dropped.id);
+    setLastEvent('Note landed on the wall');
+    dropTimerRef.current = window.setTimeout(() => {
+      setDroppingId((current) => current === dropped.id ? null : current);
+      dropTimerRef.current = null;
+    }, 560);
+  };
 
   return (
     <main className="newsroom-shell">
@@ -378,7 +407,7 @@ export default function Home() {
           <div className="stage-label"><span>LIVE WALL / 28 AUG 2026</span><span>{visibleNotes.length} NOTES / DRAG TO ARRANGE</span></div>
           {visibleNotes.length === 0 && <div className="empty-wall"><span>THE WALL IS QUIET</span><p>Write or paste the first story.</p></div>}
           {visibleNotes.map((note) => (
-            <article key={note.id} className={`postit ${note.color}`} style={{ left: `${note.x}%`, top: `${note.y}%`, rotate: `${note.rotation}deg` }}
+            <article key={note.id} className={`postit ${note.color}${draggingId === note.id ? ' is-dragging' : ''}${droppingId === note.id ? ' is-dropping' : ''}`} style={{ left: `${note.x}%`, top: `${note.y}%`, rotate: `${note.rotation}deg`, '--drag-tilt': `${droppingId === note.id ? dropTilt : dragTilt}deg` } as CSSProperties}
               onPointerDown={(event) => beginDrag(event, note)} onPointerMove={dragNote} onPointerUp={endDrag} onPointerCancel={endDrag}>
               <span className="tape" />
               <div className="note-meta"><span>{note.category}</span><span>•</span></div>
