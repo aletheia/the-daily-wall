@@ -1,5 +1,7 @@
 # The Daily Wall
 
+Live: https://the-daily-wall.vercel.app/
+
 The Daily Wall is an interactive news board where headlines and short stories become movable virtual Post-its. A person can paste stories, filter the wall, edit notes, zoom and pan the board, queue fact checks, inspect agent activity, and automatically arrange every sticky into two centered rows.
 
 The site is also an agent-facing application: it exposes its core actions as structured [WebMCP](https://webmachinelearning.github.io/webmcp/) tools, while [WebGPU](https://gpuweb.github.io/gpuweb/) and [vgpu](https://vgpu.sh/) render the tactile animated surfaces.
