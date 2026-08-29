@@ -230,7 +230,7 @@ export default function Home() {
   const [expandedFactId, setExpandedFactId] = useState<string | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const factCanvasRef = useRef<HTMLCanvasElement>(null);
-  const paneRef = useRef<HTMLElement>(null);
+  const paneRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const notesRef = useRef<Note[]>(INITIAL_NOTES);
   const actionsRef = useRef<AgentAction[]>([]);
