@@ -50,7 +50,8 @@ The Daily Wall is a tactile, browser-local news board. People and connected agen
 ## Fact checking and queues
 
 - Clicking the checkmark queues a Post-it; it does not perform research in the browser.
-- A connected agent reads `get_fact_check_queue`, researches the claim, and writes back a verdict, summary, and source URLs with `set_news_fact_check`.
+- A connected agent starts with `get_agent_action_queue`, the unified queue reader for fact checks and recent-news imports. `get_fact_check_queue` remains available as a specialized fact-check-only view.
+- For a `fact_check` item, research the claim and write back a verdict, summary, and source URLs with `set_news_fact_check` using the queued note ID.
 - Recent-news imports are queued actions. An agent must log progress, add exactly five sourced notes, and complete the queue action only after all five are pinned.
 - Queue blocks must be removable by the person and disappear when the corresponding action finishes.
 

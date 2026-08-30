@@ -451,6 +451,41 @@ export default function Home() {
     const controller = new AbortController();
     const options = { signal: controller.signal };
 
+    const readQueueSnapshot = () => {
+      const factChecks = notesRef.current.filter((note) => factStatus(note) === 'queued');
+      const actions = actionsRef.current;
+      const items = [
+        ...factChecks.map((note) => ({
+          id: note.id,
+          type: 'fact_check' as const,
+          status: 'queued' as const,
+          createdAt: note.createdAt,
+          note,
+        })),
+        ...actions.map((action) => ({
+          id: action.id,
+          type: action.type,
+          status: action.status,
+          createdAt: action.createdAt,
+          action,
+        })),
+      ].sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+
+      return {
+        success: true,
+        count: items.length,
+        factCheckCount: factChecks.length,
+        actionCount: actions.length,
+        items,
+        factChecks,
+        actions,
+        instructions: {
+          fact_check: 'Research the claim externally, log useful progress with append_agent_log, then call set_news_fact_check with the note id, verdict, summary, and source URLs.',
+          import_recent_news: 'Research the 5 most relevant stories published in the previous 24 hours, log progress with append_agent_log, add exactly 5 sourced stickies with add_news_note, then call complete_agent_action with the action id.',
+        },
+      };
+    };
+
     async function registerTools() {
       await context!.registerTool({
         name: 'add_news_note',
@@ -588,7 +623,7 @@ export default function Home() {
       }, options);
       await context!.registerTool({
         name: 'get_fact_check_queue',
-        description: 'Read complete content for every Post-it whose author requested an external fact check.',
+        description: 'Read the fact-check-only queue. For every pending queue type, use get_agent_action_queue instead.',
         inputSchema: { type: 'object', properties: {} },
         execute: () => {
           const queued = notesRef.current.filter((note) => factStatus(note) === 'queued');
@@ -630,14 +665,9 @@ export default function Home() {
       }, options);
       await context!.registerTool({
         name: 'get_agent_action_queue',
-        description: 'Read queued website actions. For import_recent_news: research the 5 most relevant news stories published in the previous 24 hours, append progress with append_agent_log, add exactly 5 sourced stickies with add_news_note, then call complete_agent_action with this action id.',
+        description: 'Primary queue reader. Use this whenever the user asks to inspect or process the queue. Returns every queued fact check and recent-news import with complete content and processing instructions.',
         inputSchema: { type: 'object', properties: {} },
-        execute: () => ({
-          success: true,
-          count: actionsRef.current.length,
-          actions: actionsRef.current,
-          instructions: 'For import_recent_news, use current external research. Include a source URL in each sticky story. Add exactly five notes, log progress, and complete the action only after all five are pinned.',
-        }),
+        execute: readQueueSnapshot,
       }, options);
       await context!.registerTool({
         name: 'append_agent_log',

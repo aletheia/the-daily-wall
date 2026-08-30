@@ -25,8 +25,9 @@ The exposed primitives include:
 - `add_news_note`, `update_news_note`, `move_news_note`, and `remove_news_note`
 - `get_news_wall`, `get_news_note`, and `search_news_wall`
 - `organize_news_wall` and `set_board_zoom`
-- `get_fact_check_queue` and `set_news_fact_check`
-- `get_agent_action_queue`, `append_agent_log`, and `complete_agent_action`
+- `get_agent_action_queue` as the unified reader for every pending fact check and recent-news import
+- `get_fact_check_queue` as a specialized fact-check-only view, plus `set_news_fact_check`
+- `append_agent_log` and `complete_agent_action`
 
 This makes the relationship deliberately bidirectional at the product level:
 
