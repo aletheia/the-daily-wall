@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type WheelEvent as ReactWheelEvent } from 'react';
 
 type NoteColor = 'yellow' | 'pink' | 'blue' | 'green' | 'orange';
 type Category = 'TECH' | 'WORLD' | 'CULTURE' | 'SCIENCE';
@@ -193,6 +193,52 @@ function organizeWall(current: Note[], renderedSizes = new Map<string, NoteSize>
 }
 
 const factStatus = (note: Note): FactCheckStatus => note.factCheck?.status ?? 'unverified';
+const WEB_LINK_PATTERN = /https?:\/\/[^\s]+/g;
+
+function safeWebLink(value: string): string | null {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'http:' || url.protocol === 'https:' ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
+function linkedText(text: string): ReactNode[] {
+  const content: ReactNode[] = [];
+  let cursor = 0;
+
+  for (const match of text.matchAll(WEB_LINK_PATTERN)) {
+    const start = match.index ?? cursor;
+    const rawMatch = match[0];
+    const trailingPunctuation = rawMatch.match(/[),.;!?]+$/)?.[0] ?? '';
+    const candidate = trailingPunctuation ? rawMatch.slice(0, -trailingPunctuation.length) : rawMatch;
+    const href = safeWebLink(candidate);
+
+    if (start > cursor) content.push(text.slice(cursor, start));
+    if (href) {
+      content.push(
+        <a
+          key={`${start}-${candidate}`}
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => event.stopPropagation()}
+        >
+          {candidate}
+        </a>,
+      );
+    } else {
+      content.push(candidate);
+    }
+    if (trailingPunctuation) content.push(trailingPunctuation);
+    cursor = start + rawMatch.length;
+  }
+
+  if (cursor < text.length) content.push(text.slice(cursor));
+  return content;
+}
 
 function createNote(input: { title: string; body: string; category?: Category; color?: NoteColor }, index: number): Note {
   const [x, y] = LAYOUT[index % LAYOUT.length];
@@ -981,11 +1027,14 @@ export default function Home() {
                   onPointerDown={(event) => beginDrag(event, note)} onPointerMove={dragNote} onPointerUp={endDrag} onPointerCancel={endDrag}>
                   <span className="tape" />
                   <div className="note-meta"><span>{note.category}</span>{note.factCheck?.summary ? <button type="button" className={`fact-badge ${factStatus(note)}`} title="Show fact-check details" aria-expanded={expandedFactId === note.id} onPointerDown={(event) => event.stopPropagation()} onClick={() => setExpandedFactId((current) => current === note.id ? null : note.id)}>{factStatus(note).toUpperCase()}</button> : <span className={`fact-badge ${factStatus(note)}`}>{factStatus(note).toUpperCase()}</span>}</div>
-                  <h2>{note.title}</h2><p>{note.body}</p>
+                  <h2>{note.title}</h2><p className="note-body">{linkedText(note.body)}</p>
                   {expandedFactId === note.id && note.factCheck?.summary && <section className="fact-expansion" onPointerDown={(event) => event.stopPropagation()}>
                     <canvas ref={factCanvasRef} aria-hidden="true" />
-                    <div><span className="fact-expansion-label">FACT-CHECK COMMENT</span><p><b>{factStatus(note)}</b> — {note.factCheck.summary}</p>
-                    {!!note.factCheck.sources?.length && <div className="fact-sources">{note.factCheck.sources.map((source, index) => <a key={`${source}-${index}`} href={source} target="_blank" rel="noreferrer">SOURCE {String(index + 1).padStart(2, '0')} ↗</a>)}</div>}</div>
+                    <div><span className="fact-expansion-label">FACT-CHECK COMMENT</span><p><b>{factStatus(note)}</b> — {linkedText(note.factCheck.summary)}</p>
+                    {!!note.factCheck.sources?.length && <div className="fact-sources">{note.factCheck.sources.map((source, index) => {
+                      const href = safeWebLink(source);
+                      return href ? <a key={`${source}-${index}`} href={href} target="_blank" rel="noopener noreferrer" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>SOURCE {String(index + 1).padStart(2, '0')} ↗</a> : null;
+                    })}</div>}</div>
                   </section>}
                   <footer><span>JUST NOW</span><div><button className="note-action fact-action" onPointerDown={(event) => event.stopPropagation()} onClick={() => queueFactCheck(note)} aria-label={`Queue ${note.title} for a fact check`} title="Fact check"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6" /></svg></button><button className="note-action edit-action" onPointerDown={(event) => event.stopPropagation()} onClick={() => editNote(note)} aria-label={`Edit ${note.title}`} title="Edit"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 20 4.4-1 10.8-10.8-3.4-3.4L5 15.6 4 20Z" /><path d="m14.8 5.8 3.4 3.4" /></svg></button><button className="note-action delete-action" onPointerDown={(event) => event.stopPropagation()} onClick={() => shredNote(note)} aria-label={`Shred ${note.title}`} title="Delete"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M9 7V4h6v3m-8 0 1 13h8l1-13M10 11v5m4-5v5" /></svg></button></div></footer>
                   {shreddingIds.includes(note.id) && <span className="shred-confetti" aria-hidden="true">{CONFETTI_PIECES.map((piece, index) => <i key={index} style={{ left: `${piece.left}%`, top: `${piece.top}%`, '--confetti-x': `${piece.drift}px`, '--confetti-y': `${piece.fall}px`, '--confetti-spin': `${piece.spin}deg`, '--confetti-delay': `${piece.delay}ms` } as CSSProperties} />)}</span>}

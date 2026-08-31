@@ -86,6 +86,9 @@ button.fact-badge:hover { transform: translateY(-1px); box-shadow: 0 0 0 2px rgb
 .fact-badge.inconclusive { background: #ddd8ce; }
 .postit h2 { margin: 19px 0 10px; font-family: Georgia, serif; font-size: clamp(20px, 1.7vw, 28px); font-weight: 500; line-height: 1.02; letter-spacing: -.025em; }
 .postit p { margin: 0 0 18px; font-size: 11px; line-height: 1.45; }
+.postit .note-body, .postit .fact-expansion p, .fact-sources { min-width: 0; max-width: 100%; overflow-wrap: anywhere; word-break: break-word; }
+.postit .note-body a, .postit .fact-expansion p a { color: inherit; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 2px; cursor: pointer; }
+.postit .note-body a:hover, .postit .fact-expansion p a:hover { text-decoration-thickness: 2px; }
 .postit.is-expanded { z-index: 18; }
 .fact-expansion { position: relative; min-height: 0; margin: -5px -10px 15px; overflow: hidden; border: 1px solid rgba(0,0,0,.25); background: rgba(255,255,255,.42); animation: fact-panel-open .38s cubic-bezier(.18,.82,.23,1) both; transform-origin: top; }
 .fact-expansion canvas { position: absolute; inset: 0; width: 100%; height: 100%; opacity: .32; pointer-events: none; mix-blend-mode: multiply; }
@@ -93,7 +96,7 @@ button.fact-badge:hover { transform: translateY(-1px); box-shadow: 0 0 0 2px rgb
 .fact-expansion-label { display: block; margin-bottom: 7px; font: 7px var(--font-geist-mono), monospace; letter-spacing: .11em; }
 .postit .fact-expansion p { margin: 0; font: 8px/1.45 var(--font-geist-mono), monospace; }
 .fact-sources { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 9px; }
-.fact-sources a { padding: 4px 5px; border: 1px solid rgba(0,0,0,.3); color: inherit; background: rgba(255,255,255,.24); text-decoration: none; font: 6px var(--font-geist-mono), monospace; letter-spacing: .06em; }
+.fact-sources a { display: block; max-width: 100%; padding: 4px 5px; border: 1px solid rgba(0,0,0,.3); color: inherit; background: rgba(255,255,255,.24); text-decoration: none; overflow-wrap: anywhere; font: 6px var(--font-geist-mono), monospace; letter-spacing: .06em; }
 .fact-sources a:hover { background: rgba(255,255,255,.68); }
 .postit footer { margin-top: auto; padding-top: 12px; border-top: 1px solid rgba(0,0,0,.18); display: flex; align-items: center; justify-content: space-between; font: 8px var(--font-geist-mono), monospace; }
 .postit footer > div { display: flex; gap: 5px; }
