@@ -58,6 +58,18 @@ declare global {
 
 const COLORS: NoteColor[] = ['yellow', 'pink', 'blue', 'green', 'orange'];
 const CATEGORIES: Category[] = ['TECH', 'WORLD', 'CULTURE', 'SCIENCE'];
+const CATEGORY_COLORS: Record<Category, NoteColor> = {
+  TECH: 'blue',
+  WORLD: 'yellow',
+  CULTURE: 'pink',
+  SCIENCE: 'green',
+};
+const CATEGORY_COLOR_LABELS: Record<Category, string> = {
+  TECH: 'BLUE',
+  WORLD: 'YELLOW',
+  CULTURE: 'PINK',
+  SCIENCE: 'GREEN',
+};
 const FACT_CHECK_STATUSES: FactCheckStatus[] = ['unverified', 'queued', 'verified', 'disputed', 'inconclusive'];
 const AGENT_LOG_LEVELS: AgentLogLevel[] = ['info', 'success', 'warning', 'error'];
 const AGENT_ACTORS: AgentActor[] = ['human', 'agent', 'system'];
@@ -76,11 +88,11 @@ const CONFETTI_PIECES = Array.from({ length: 22 }, (_, index) => ({
 }));
 
 const INITIAL_NOTES: Note[] = [
-  { id: 'open-models', category: 'TECH', title: 'Open models close the gap', body: 'Small, specialized models are becoming the default for focused newsroom workflows.', color: 'yellow', x: 6, y: 9, rotation: -3, createdAt: '2026-08-28T07:40:00.000Z' },
-  { id: 'solar-roofs', category: 'WORLD', title: 'Cities turn roofs into power', body: 'A new wave of urban solar projects is shifting the economics of local energy.', color: 'pink', x: 38, y: 5, rotation: 2, createdAt: '2026-08-28T07:41:00.000Z' },
-  { id: 'tactile-ui', category: 'CULTURE', title: 'Interfaces get tactile again', body: 'Texture, depth and useful imperfection are returning to digital products.', color: 'blue', x: 68, y: 14, rotation: 4, createdAt: '2026-08-28T07:42:00.000Z' },
+  { id: 'open-models', category: 'TECH', title: 'Open models close the gap', body: 'Small, specialized models are becoming the default for focused newsroom workflows.', color: 'blue', x: 6, y: 9, rotation: -3, createdAt: '2026-08-28T07:40:00.000Z' },
+  { id: 'solar-roofs', category: 'WORLD', title: 'Cities turn roofs into power', body: 'A new wave of urban solar projects is shifting the economics of local energy.', color: 'yellow', x: 38, y: 5, rotation: 2, createdAt: '2026-08-28T07:41:00.000Z' },
+  { id: 'tactile-ui', category: 'CULTURE', title: 'Interfaces get tactile again', body: 'Texture, depth and useful imperfection are returning to digital products.', color: 'pink', x: 68, y: 14, rotation: 4, createdAt: '2026-08-28T07:42:00.000Z' },
   { id: 'quiet-ocean', category: 'SCIENCE', title: 'A quieter way to map the sea', body: 'Distributed sensors are revealing marine life without flooding habitats with noise.', color: 'green', x: 16, y: 52, rotation: 3, createdAt: '2026-08-28T07:43:00.000Z' },
-  { id: 'local-paper', category: 'CULTURE', title: 'The neighborhood newspaper returns', body: 'Independent local publishing is finding a new audience through tiny, trusted editions.', color: 'orange', x: 53, y: 54, rotation: -2, createdAt: '2026-08-28T07:44:00.000Z' },
+  { id: 'local-paper', category: 'CULTURE', title: 'The neighborhood newspaper returns', body: 'Independent local publishing is finding a new audience through tiny, trusted editions.', color: 'pink', x: 53, y: 54, rotation: -2, createdAt: '2026-08-28T07:44:00.000Z' },
 ];
 
 const BOARD_SHADER = /* wgsl */ `
@@ -240,14 +252,15 @@ function linkedText(text: string): ReactNode[] {
   return content;
 }
 
-function createNote(input: { title: string; body: string; category?: Category; color?: NoteColor }, index: number): Note {
+function createNote(input: { title: string; body: string; category?: Category }, index: number): Note {
   const [x, y] = LAYOUT[index % LAYOUT.length];
+  const category = input.category ?? 'WORLD';
   return {
     id: `note-${Date.now()}-${index}`,
     title: input.title.slice(0, 90),
     body: input.body.slice(0, 420),
-    category: input.category ?? 'WORLD',
-    color: input.color ?? COLORS[index % COLORS.length],
+    category,
+    color: CATEGORY_COLORS[category],
     x,
     y,
     rotation: ROTATIONS[index % ROTATIONS.length],
@@ -256,13 +269,17 @@ function createNote(input: { title: string; body: string; category?: Category; c
   };
 }
 
+function normalizeNote(note: Note): Note {
+  const category = CATEGORIES.includes(note.category) ? note.category : 'WORLD';
+  return { ...note, category, color: CATEGORY_COLORS[category] };
+}
+
 export default function Home() {
   const [notes, setNotes] = useState<Note[]>(INITIAL_NOTES);
   const [activeFilter, setActiveFilter] = useState<Filter>('ALL');
   const [headline, setHeadline] = useState('');
   const [story, setStory] = useState('');
   const [category, setCategory] = useState<Category>('WORLD');
-  const [color, setColor] = useState<NoteColor>('yellow');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [lastEvent, setLastEvent] = useState('Wall opened with five stories');
   const [gpuStatus, setGpuStatus] = useState<'loading' | 'ready' | 'fallback'>('loading');
@@ -345,7 +362,6 @@ export default function Home() {
     setHeadline('');
     setStory('');
     setCategory('WORLD');
-    setColor('yellow');
     setEditingId(null);
   }, []);
 
@@ -396,7 +412,7 @@ export default function Home() {
     return sizes;
   }, []);
 
-  const addNewsNote = useCallback((input: { title: string; body: string; category?: Category; color?: NoteColor }, actor: AgentActor) => {
+  const addNewsNote = useCallback((input: { title: string; body: string; category?: Category }, actor: AgentActor) => {
     const operation = noteAddQueueRef.current.then(async () => {
       const current = notesRef.current;
       const next = createNote(input, current.length);
@@ -445,7 +461,7 @@ export default function Home() {
         storageReadyRef.current = true;
         if (stored) {
           const parsed = JSON.parse(stored) as Note[];
-          if (Array.isArray(parsed)) commitNotes(parsed.slice(0, 24));
+          if (Array.isArray(parsed)) commitNotes(parsed.slice(0, 24).map(normalizeNote));
         }
         if (storedActions) {
           const parsed = JSON.parse(storedActions) as AgentAction[];
@@ -603,11 +619,11 @@ export default function Home() {
             headline: { type: 'string', description: 'Short news headline.' },
             story: { type: 'string', description: 'News summary or pasted story.' },
             category: { type: 'string', enum: CATEGORIES },
-            color: { type: 'string', enum: COLORS },
+            color: { type: 'string', enum: COLORS, description: 'Deprecated compatibility field. Paper color is determined by category.' },
           },
           required: ['headline', 'story'],
         },
-        execute: ({ headline: rawHeadline, story: rawStory, category: rawCategory, color: rawColor }) => {
+        execute: ({ headline: rawHeadline, story: rawStory, category: rawCategory }) => {
           const cleanHeadline = String(rawHeadline ?? '').trim();
           const cleanStory = String(rawStory ?? '').trim();
           if (!cleanHeadline || !cleanStory) return { success: false, error: 'Headline and story are required.' };
@@ -615,32 +631,32 @@ export default function Home() {
             title: cleanHeadline,
             body: cleanStory,
             category: CATEGORIES.includes(rawCategory as Category) ? rawCategory as Category : 'WORLD',
-            color: COLORS.includes(rawColor as NoteColor) ? rawColor as NoteColor : undefined,
           }, 'agent');
         },
       }, options);
       await context!.registerTool({
         name: 'update_news_note',
-        description: 'Edit the headline, story, category, or color of an existing news Post-it.',
+        description: 'Edit the headline, story, or category of an existing news Post-it. Paper color follows category.',
         inputSchema: {
           type: 'object',
           properties: {
             id: { type: 'string' }, headline: { type: 'string' }, story: { type: 'string' },
-            category: { type: 'string', enum: CATEGORIES }, color: { type: 'string', enum: COLORS },
+            category: { type: 'string', enum: CATEGORIES }, color: { type: 'string', enum: COLORS, description: 'Deprecated compatibility field. Paper color is determined by category.' },
           },
           required: ['id'],
         },
-        execute: ({ id, headline: newHeadline, story: newStory, category: newCategory, color: newColor }) => {
+        execute: ({ id, headline: newHeadline, story: newStory, category: newCategory }) => {
           const noteId = String(id);
           const current = notesRef.current;
           const targetNote = current.find((note) => note.id === noteId);
           if (!targetNote) return { success: false, error: 'Note not found.' };
+          const category = CATEGORIES.includes(newCategory as Category) ? newCategory as Category : targetNote.category;
           const updated: Note = {
             ...targetNote,
             title: newHeadline === undefined ? targetNote.title : String(newHeadline).trim().slice(0, 90),
             body: newStory === undefined ? targetNote.body : String(newStory).trim().slice(0, 420),
-            category: CATEGORIES.includes(newCategory as Category) ? newCategory as Category : targetNote.category,
-            color: COLORS.includes(newColor as NoteColor) ? newColor as NoteColor : targetNote.color,
+            category,
+            color: CATEGORY_COLORS[category],
           };
           commitNotes(current.map((note) => note.id === noteId ? updated : note));
           setLastEvent(`Agent edited “${updated.title}”`);
@@ -931,16 +947,16 @@ export default function Home() {
     const cleanStory = story.trim();
     if (!cleanHeadline || !cleanStory) { setLastEvent('Add a headline and story first'); return }
     if (editingId) {
-      commitNotes((current) => current.map((note) => note.id === editingId ? { ...note, title: cleanHeadline.slice(0, 90), body: cleanStory.slice(0, 420), category, color } : note));
+      commitNotes((current) => current.map((note) => note.id === editingId ? { ...note, title: cleanHeadline.slice(0, 90), body: cleanStory.slice(0, 420), category, color: CATEGORY_COLORS[category] } : note));
       setLastEvent(`Updated “${cleanHeadline}”`);
     } else {
-      void addNewsNote({ title: cleanHeadline, body: cleanStory, category, color }, 'human');
+      void addNewsNote({ title: cleanHeadline, body: cleanStory, category }, 'human');
     }
     resetComposer();
   };
 
   const editNote = (note: Note) => {
-    setHeadline(note.title); setStory(note.body); setCategory(note.category); setColor(note.color); setEditingId(note.id);
+    setHeadline(note.title); setStory(note.body); setCategory(note.category); setEditingId(note.id);
     setLastEvent(`Editing “${note.title}”`);
   };
 
@@ -1090,8 +1106,19 @@ export default function Home() {
           <form onSubmit={submitNote}>
             <label>HEADLINE<input value={headline} onChange={(event) => setHeadline(event.target.value)} maxLength={90} placeholder="What happened?" /></label>
             <label>STORY<textarea value={story} onChange={(event) => setStory(event.target.value)} maxLength={420} placeholder="Write or paste the news here…" /></label>
-            <label>CATEGORY<select value={category} onChange={(event) => setCategory(event.target.value as Category)}>{CATEGORIES.map((item) => <option key={item}>{item}</option>)}</select></label>
-            <div className="color-row"><span>COLOR</span>{COLORS.map((item) => <input type="radio" name="note-color" value={item} key={item} className={`swatch ${item}`} checked={color === item} onChange={() => setColor(item)} aria-label={`Use ${item} paper`} title={item} />)}</div>
+            <fieldset className="type-options">
+              <legend>TYPE / PAPER COLOR</legend>
+              <div className="type-option-list">
+                {CATEGORIES.map((item) => {
+                  const itemColor = CATEGORY_COLORS[item];
+                  return <label key={item} className={`type-option ${category === item ? 'selected' : ''}`}>
+                    <input type="radio" name="note-category" value={item} checked={category === item} onChange={() => setCategory(item)} />
+                    <span className={`type-option-swatch ${itemColor}`} aria-hidden="true" />
+                    <span className="type-option-copy"><b>{item}</b><small>{CATEGORY_COLOR_LABELS[item]}</small></span>
+                  </label>;
+                })}
+              </div>
+            </fieldset>
             <button type="submit" className="pin-button"><span>{editingId ? 'UPDATE THE NOTE' : 'PIN TO THE WALL'}</span><b>↗</b></button>
             {editingId && <button type="button" className="cancel-button" onClick={resetComposer}>CANCEL EDIT</button>}
           </form>
