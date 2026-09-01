@@ -59,7 +59,7 @@ button { cursor: pointer; }
 .zoom-controls .auto-layout-control { width: auto; padding: 0 12px; font-size: 8px; letter-spacing: .08em; }
 .zoom-controls button:hover { background: #e54b36; color: white; }
 .stage-label { position: absolute; z-index: 3; left: 20px; right: 20px; bottom: 16px; display: flex; justify-content: space-between; color: rgba(255,255,255,.45); font: 9px var(--font-geist-mono), monospace; letter-spacing: .12em; }
-.postit { position: absolute; z-index: 2; width: min(245px, 28%); min-height: 205px; padding: 25px 24px 18px; color: #171712; box-shadow: 0 20px 32px rgba(0,0,0,.3), 0 2px 0 rgba(0,0,0,.28); display: flex; flex-direction: column; transform-origin: 50% 82%; transition: transform .18s ease, box-shadow .18s ease, filter .18s ease; user-select: none; touch-action: none; cursor: grab; will-change: transform, box-shadow; }
+.postit { position: absolute; z-index: 2; width: min(269.5px, 28%); min-height: 205px; padding: 25px 24px 18px; color: #171712; box-shadow: 0 20px 32px rgba(0,0,0,.3), 0 2px 0 rgba(0,0,0,.28); display: flex; flex-direction: column; transform-origin: 50% 82%; transition: transform .18s ease, box-shadow .18s ease, filter .18s ease; user-select: none; touch-action: none; cursor: grab; will-change: transform, box-shadow; }
 .postit:active { cursor: grabbing; }
 .postit::after { content: ''; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(120deg, rgba(255,255,255,.34), transparent 32%, rgba(0,0,0,.08)); opacity: 0; transition: opacity .16s ease; }
 .postit:hover:not(.is-dragging):not(.is-dropping):not(.is-shredding) { transform: translateY(-7px) rotate(-1deg); box-shadow: 0 28px 38px rgba(0,0,0,.38); z-index: 4; }

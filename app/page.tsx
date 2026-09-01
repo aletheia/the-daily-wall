@@ -62,7 +62,7 @@ const FACT_CHECK_STATUSES: FactCheckStatus[] = ['unverified', 'queued', 'verifie
 const AGENT_LOG_LEVELS: AgentLogLevel[] = ['info', 'success', 'warning', 'error'];
 const AGENT_ACTORS: AgentActor[] = ['human', 'agent', 'system'];
 const BASE_BOARD_WIDTH = 1600;
-const NOTE_WIDTH = 245;
+const NOTE_WIDTH = 269.5;
 const LAYOUT_HORIZONTAL_GAP = 44;
 const LAYOUT = [[6, 9], [38, 5], [68, 14], [16, 52], [53, 54], [72, 58], [6, 68]];
 const ROTATIONS = [-3, 2, 4, 3, -2, 1, -4];
@@ -897,7 +897,7 @@ export default function Home() {
       const pane = paneRef.current;
       if (!pane) return;
       const currentZoom = zoomRef.current;
-      pane.scrollLeft = Math.max(0, note.x / 100 * boardWidth * currentZoom - pane.clientWidth / 2 + 122 * currentZoom);
+      pane.scrollLeft = Math.max(0, note.x / 100 * boardWidth * currentZoom - pane.clientWidth / 2 + NOTE_WIDTH / 2 * currentZoom);
       pane.scrollTop = Math.max(0, note.y / 100 * getBoardHeight(notesRef.current.length) * currentZoom - pane.clientHeight / 2 + 103 * currentZoom);
     });
     setLastEvent(`Focused “${note.title}”`);
