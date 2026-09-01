@@ -288,6 +288,8 @@ export default function Home() {
   const draggingRef = useRef<{ id: string; offsetX: number; offsetY: number; lastX: number; startX: number; startY: number; x: number; y: number; moved: boolean } | null>(null);
   const panningRef = useRef<{ pointerId: number; startX: number; startY: number; scrollLeft: number; scrollTop: number } | null>(null);
   const dropTimerRef = useRef<number | null>(null);
+  const newNoteDropTimerRef = useRef<number | null>(null);
+  const noteAddQueueRef = useRef<Promise<void>>(Promise.resolve());
   const shredTimersRef = useRef<Map<string, number>>(new Map());
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [droppingId, setDroppingId] = useState<string | null>(null);
@@ -394,6 +396,34 @@ export default function Home() {
     return sizes;
   }, []);
 
+  const addNewsNote = useCallback((input: { title: string; body: string; category?: Category; color?: NoteColor }, actor: AgentActor) => {
+    const operation = noteAddQueueRef.current.then(async () => {
+      const current = notesRef.current;
+      const next = createNote(input, current.length);
+      const organized = organizeWall([...current, next].slice(-24), getRenderedNoteSizes());
+      const created = organized.find((note) => note.id === next.id) ?? next;
+      commitNotes(organized);
+      setActiveFilter('ALL');
+      setDropTilt(0);
+      setDroppingId(created.id);
+      setLastEvent(`${actor === 'agent' ? 'Agent is pinning' : 'Pinning'} “${created.title}”`);
+
+      await new Promise<void>((resolve) => {
+        newNoteDropTimerRef.current = window.setTimeout(() => {
+          setDroppingId((currentId) => currentId === created.id ? null : currentId);
+          newNoteDropTimerRef.current = null;
+          resolve();
+        }, 260);
+      });
+
+      appendLog(`Pinned “${created.title}” to the news wall with a drop animation.`, 'success', actor);
+      setLastEvent(`${actor === 'agent' ? 'Agent pinned' : 'Pinned'} “${created.title}”`);
+      return { success: true as const, note: created, wallOrganized: true, animation: 'drop' as const };
+    });
+    noteAddQueueRef.current = operation.then(() => undefined, () => undefined);
+    return operation;
+  }, [appendLog, commitNotes, getRenderedNoteSizes]);
+
   const moveStickerViaApi = useCallback((id: string, requestedX: number, requestedY: number, actor: AgentActor, options: { log?: boolean; announce?: boolean } = {}) => {
     const current = notesRef.current;
     const target = current.find((note) => note.id === id);
@@ -451,6 +481,7 @@ export default function Home() {
 
   useEffect(() => () => {
     if (dropTimerRef.current !== null) window.clearTimeout(dropTimerRef.current);
+    if (newNoteDropTimerRef.current !== null) window.clearTimeout(newNoteDropTimerRef.current);
     shredTimersRef.current.forEach((timer) => window.clearTimeout(timer));
     shredTimersRef.current.clear();
   }, []);
@@ -565,7 +596,7 @@ export default function Home() {
     async function registerTools() {
       await context!.registerTool({
         name: 'add_news_note',
-        description: 'Add a news Post-it to The Daily Wall.',
+        description: 'Add a news Post-it to The Daily Wall with a drop animation. Concurrent agent additions are displayed one by one.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -580,19 +611,12 @@ export default function Home() {
           const cleanHeadline = String(rawHeadline ?? '').trim();
           const cleanStory = String(rawStory ?? '').trim();
           if (!cleanHeadline || !cleanStory) return { success: false, error: 'Headline and story are required.' };
-          const current = notesRef.current;
-          const next = createNote({
+          return addNewsNote({
             title: cleanHeadline,
             body: cleanStory,
             category: CATEGORIES.includes(rawCategory as Category) ? rawCategory as Category : 'WORLD',
             color: COLORS.includes(rawColor as NoteColor) ? rawColor as NoteColor : undefined,
-          }, current.length);
-          const organized = organizeWall([...current, next].slice(-24), getRenderedNoteSizes());
-          const created = organized.find((note) => note.id === next.id) ?? next;
-          commitNotes(organized);
-          appendLog(`Pinned “${next.title}” to the news wall.`, 'success', 'agent');
-          setLastEvent(`Agent pinned “${next.title}”`);
-          return { success: true, note: created, wallOrganized: true };
+          }, 'agent');
         },
       }, options);
       await context!.registerTool({
@@ -795,7 +819,7 @@ export default function Home() {
 
     registerTools().catch((error) => { console.error('WebMCP registration failed', error); appendLog('WebMCP tool registration failed; agent controls are unavailable.', 'error', 'system'); setMcpStatus('preview') });
     return () => controller.abort();
-  }, [appendLog, centerBoardView, commitActions, commitNotes, getRenderedNoteSizes, moveStickerViaApi, removeNewsNote, setBoardZoom]);
+  }, [addNewsNote, appendLog, centerBoardView, commitActions, commitNotes, getRenderedNoteSizes, moveStickerViaApi, removeNewsNote, setBoardZoom]);
 
   const visibleNotes = useMemo(() => activeFilter === 'ALL' ? notes : notes.filter((note) => note.category === activeFilter), [activeFilter, notes]);
   const counts = useMemo(() => Object.fromEntries(['ALL', ...CATEGORIES].map((item) => [item, item === 'ALL' ? notes.length : notes.filter((note) => note.category === item).length])), [notes]);
@@ -910,10 +934,7 @@ export default function Home() {
       commitNotes((current) => current.map((note) => note.id === editingId ? { ...note, title: cleanHeadline.slice(0, 90), body: cleanStory.slice(0, 420), category, color } : note));
       setLastEvent(`Updated “${cleanHeadline}”`);
     } else {
-      const next = createNote({ title: cleanHeadline, body: cleanStory, category, color }, notesRef.current.length);
-      commitNotes((current) => organizeWall([...current, next].slice(-24), getRenderedNoteSizes()));
-      setActiveFilter('ALL');
-      setLastEvent(`Pinned “${next.title}”`);
+      void addNewsNote({ title: cleanHeadline, body: cleanStory, category, color }, 'human');
     }
     resetComposer();
   };
