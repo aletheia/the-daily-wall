@@ -339,6 +339,36 @@ export default function Home() {
     setLastEvent('Cleared agent activity log');
   }, [commitLogs]);
 
+  const resetComposer = useCallback(() => {
+    setHeadline('');
+    setStory('');
+    setCategory('WORLD');
+    setColor('yellow');
+    setEditingId(null);
+  }, []);
+
+  const removeNewsNote = useCallback((noteId: string, actor: AgentActor) => {
+    const note = notesRef.current.find((item) => item.id === noteId);
+    if (!note) return Promise.resolve({ success: false as const, error: 'Note not found.' });
+    if (shredTimersRef.current.has(note.id)) return Promise.resolve({ success: false as const, error: 'Note removal is already in progress.' });
+
+    setShreddingIds((current) => current.includes(note.id) ? current : [...current, note.id]);
+    setLastEvent(`${actor === 'agent' ? 'Agent is shredding' : 'Shredding'} “${note.title}”`);
+
+    return new Promise<{ success: true; id: string; animation: 'shredding_to_confetti' }>((resolve) => {
+      const timer = window.setTimeout(() => {
+        commitNotes((current) => current.filter((item) => item.id !== note.id));
+        setShreddingIds((current) => current.filter((id) => id !== note.id));
+        shredTimersRef.current.delete(note.id);
+        if (editingId === note.id) resetComposer();
+        appendLog(`Removed “${note.title}” after shredding it into confetti.`, 'success', actor);
+        setLastEvent(`${actor === 'agent' ? 'Agent removed' : 'Removed'} “${note.title}”`);
+        resolve({ success: true, id: note.id, animation: 'shredding_to_confetti' });
+      }, 1100);
+      shredTimersRef.current.set(note.id, timer);
+    });
+  }, [appendLog, commitNotes, editingId, resetComposer]);
+
   const setBoardZoom = useCallback((value: number) => {
     const next = Math.round(clamp(value, 0.55, 1.45) * 20) / 20;
     zoomRef.current = next;
@@ -607,15 +637,10 @@ export default function Home() {
       }, options);
       await context!.registerTool({
         name: 'remove_news_note',
-        description: 'Remove one news Post-it from the wall.',
+        description: 'Shred one news Post-it into confetti, then remove it from the wall.',
         inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
         execute: ({ id }) => {
-          const noteId = String(id);
-          const current = notesRef.current;
-          if (!current.some((note) => note.id === noteId)) return { success: false, error: 'Note not found.' };
-          commitNotes(current.filter((note) => note.id !== noteId));
-          setLastEvent('Agent removed one note');
-          return { success: true, id: noteId };
+          return removeNewsNote(String(id), 'agent');
         },
       }, options);
       await context!.registerTool({
@@ -769,7 +794,7 @@ export default function Home() {
 
     registerTools().catch((error) => { console.error('WebMCP registration failed', error); appendLog('WebMCP tool registration failed; agent controls are unavailable.', 'error', 'system'); setMcpStatus('preview') });
     return () => controller.abort();
-  }, [appendLog, centerBoardView, commitActions, commitNotes, getRenderedNoteSizes, moveStickerViaApi, setBoardZoom]);
+  }, [appendLog, centerBoardView, commitActions, commitNotes, getRenderedNoteSizes, moveStickerViaApi, removeNewsNote, setBoardZoom]);
 
   const visibleNotes = useMemo(() => activeFilter === 'ALL' ? notes : notes.filter((note) => note.category === activeFilter), [activeFilter, notes]);
   const counts = useMemo(() => Object.fromEntries(['ALL', ...CATEGORIES].map((item) => [item, item === 'ALL' ? notes.length : notes.filter((note) => note.category === item).length])), [notes]);
@@ -840,8 +865,6 @@ export default function Home() {
     setIsPanning(false);
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
   };
-
-  const resetComposer = () => { setHeadline(''); setStory(''); setCategory('WORLD'); setColor('yellow'); setEditingId(null) };
 
   const focusNote = (note: Note) => {
     setActiveFilter('ALL');
@@ -915,20 +938,6 @@ export default function Home() {
     commitNotes((current) => current.map((item) => item.id === note.id ? { ...item, factCheck: { status: 'unverified' } } : item));
     appendLog(`Removed “${note.title}” from the fact-check queue.`, 'warning', 'human');
     setLastEvent(`Cancelled fact-check for “${note.title}”`);
-  };
-
-  const shredNote = (note: Note) => {
-    if (shredTimersRef.current.has(note.id)) return;
-    setShreddingIds((current) => [...current, note.id]);
-    setLastEvent(`Shredding “${note.title}”`);
-    const timer = window.setTimeout(() => {
-      commitNotes((current) => current.filter((item) => item.id !== note.id));
-      setShreddingIds((current) => current.filter((id) => id !== note.id));
-      shredTimersRef.current.delete(note.id);
-      if (editingId === note.id) resetComposer();
-      setLastEvent(`Removed “${note.title}”`);
-    }, 1100);
-    shredTimersRef.current.set(note.id, timer);
   };
 
   const beginDrag = (event: ReactPointerEvent<HTMLElement>, note: Note) => {
@@ -1036,7 +1045,7 @@ export default function Home() {
                       return href ? <a key={`${source}-${index}`} href={href} target="_blank" rel="noopener noreferrer" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>SOURCE {String(index + 1).padStart(2, '0')} ↗</a> : null;
                     })}</div>}</div>
                   </section>}
-                  <footer><span>JUST NOW</span><div><button className="note-action fact-action" onPointerDown={(event) => event.stopPropagation()} onClick={() => queueFactCheck(note)} aria-label={`Queue ${note.title} for a fact check`} title="Fact check"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6" /></svg></button><button className="note-action edit-action" onPointerDown={(event) => event.stopPropagation()} onClick={() => editNote(note)} aria-label={`Edit ${note.title}`} title="Edit"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 20 4.4-1 10.8-10.8-3.4-3.4L5 15.6 4 20Z" /><path d="m14.8 5.8 3.4 3.4" /></svg></button><button className="note-action delete-action" onPointerDown={(event) => event.stopPropagation()} onClick={() => shredNote(note)} aria-label={`Shred ${note.title}`} title="Delete"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M9 7V4h6v3m-8 0 1 13h8l1-13M10 11v5m4-5v5" /></svg></button></div></footer>
+                  <footer><span>JUST NOW</span><div><button className="note-action fact-action" onPointerDown={(event) => event.stopPropagation()} onClick={() => queueFactCheck(note)} aria-label={`Queue ${note.title} for a fact check`} title="Fact check"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6" /></svg></button><button className="note-action edit-action" onPointerDown={(event) => event.stopPropagation()} onClick={() => editNote(note)} aria-label={`Edit ${note.title}`} title="Edit"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 20 4.4-1 10.8-10.8-3.4-3.4L5 15.6 4 20Z" /><path d="m14.8 5.8 3.4 3.4" /></svg></button><button className="note-action delete-action" onPointerDown={(event) => event.stopPropagation()} onClick={() => { void removeNewsNote(note.id, 'human') }} aria-label={`Shred ${note.title}`} title="Delete"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M9 7V4h6v3m-8 0 1 13h8l1-13M10 11v5m4-5v5" /></svg></button></div></footer>
                   {shreddingIds.includes(note.id) && <span className="shred-confetti" aria-hidden="true">{CONFETTI_PIECES.map((piece, index) => <i key={index} style={{ left: `${piece.left}%`, top: `${piece.top}%`, '--confetti-x': `${piece.drift}px`, '--confetti-y': `${piece.fall}px`, '--confetti-spin': `${piece.spin}deg`, '--confetti-delay': `${piece.delay}ms` } as CSSProperties} />)}</span>}
                 </article>
               ))}
