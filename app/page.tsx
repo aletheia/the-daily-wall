@@ -655,13 +655,14 @@ export default function Home() {
       }, options);
       await context!.registerTool({
         name: 'clear_news_wall',
-        description: 'Remove every Post-it from The Daily Wall.',
+        description: 'Shred every Post-it into confetti, then clear The Daily Wall.',
         inputSchema: { type: 'object', properties: {} },
-        execute: () => {
-          const removed = notesRef.current.length;
-          commitNotes([]);
-          setLastEvent(`Agent cleared ${removed} notes`);
-          return { success: true, removed };
+        execute: async () => {
+          const noteIds = notesRef.current.map((note) => note.id);
+          if (noteIds.length === 0) return { success: true, removed: 0, animation: 'shredding_to_confetti' };
+          await Promise.all(noteIds.map((noteId) => removeNewsNote(noteId, 'agent')));
+          setLastEvent(`Agent cleared ${noteIds.length} notes after shredding them into confetti`);
+          return { success: true, removed: noteIds.length, animation: 'shredding_to_confetti' };
         },
       }, options);
       await context!.registerTool({
